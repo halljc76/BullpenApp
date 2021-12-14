@@ -1,30 +1,29 @@
 ---
 title: "BullpenApp Project Script"
-output: html_notebook
 ---
 
-**BullpenApp Project Script**
+**BullpenApp Project Script** 
 Carter Hall 
 
-*Ideas*
+*Ideas* 
 - Homepage 
-  - Welcome Message :)
-  - Basic Stats for Most Recent Session
-    (Pie Chart of Pitch Types, Session History, Max Velo, Max RPM, Recent Notes)
-     
+- Welcome Message :)
+- Basic Stats for Most Recent Session
+(Pie Chart of Pitch Types, Session History, Max Velo, Max RPM, Recent Notes)
+
 - Option Tab
-  - Checkboxes Here, Menus Here
+- Checkboxes Here, Menus Here
 
 - Pitch Plot for Session (Location, SZ)
-  - CheckboxGroup for Session Date(s)
-  - CheckboxGroup for Warmup/Live (Live standard opt.)
-  - SZ Toggle
-  - Baseball Image Toggle???
-  
+- CheckboxGroup for Session Date(s)
+- CheckboxGroup for Warmup/Live (Live standard opt.) --> Implement this in Server
+- SZ Toggle
+- Baseball Image Toggle???
+
 - Line Graph (Check Consistency, Duration of Sustaining XX mph Velo, XXXX RPMs, etc.)
-  - Use CG for Session Date(s)
-  - Dropdown to Specify Metric(s)
-     - Limit 2-3? Use 320 Stuff to Section Graph (GGPlot... Future Conversion to Plotly? )
+- Use CG for Session Date(s)
+- Dropdown to Specify Metric(s)
+- Limit 2-3? Use 320 Stuff to Section Graph (GGPlot... Future Conversion to Plotly? )
 
 
 ```{r Libraries, message = FALSE, warning = FALSE}
@@ -34,18 +33,76 @@ library(shinydashboard)
 library(DT)
 library(ggplot2)
 library(dplyr)
-library(Jmisc)
-library(msm)
-library(gt)
-library(leaflet)
-require(shinythemes)
+library(shinythemes)
+```
+
+```{r Dataset message = FALSE, warning = FALSE}
+library(DBI)
+library(dbplyr)
+library(RSQLite)
+db <- dbConnect(RSQLite::SQLite(), "data.sqlite")
+
+queryDB <- function(query) {
+  return(dbGetQuery(db, query))
+}
+
+obtainSession <- function(player) {
+  q <- "SELECT DISTINCT Date FROM TestData WHERE Pitcher = '_'"
+  result <- list(unname(queryDB(gsub(pattern = '_', replacement = player, x = q)))[[1]])
+  names(result) <- result
+  return(result)
+}
 ```
 
 ```{r UI}
 ui <- navbarPage(
-    title = "The Tar Pen",
-    theme = shinytheme("lumen")
+  title = "The Tar Pen",
+  theme = shinytheme("lumen"),
   
+  tabPanel("Homepage", 
+           fluid = TRUE,
+           icon = icon("home"),
+           
+           sidebarLayout(
+             
+             sidebarPanel = sidebarPanel(
+               
+               width = 3,
+               
+               titlePanel("Specify Information"),
+               
+               fluidRow(
+                 column(
+                   
+                   width = 8,
+                   offset = 0,
+                   
+                   h4("Name"),
+                   selectInput(inputId = "playerSelect",
+                               label = NULL,
+                               choices = NULL),
+                   
+                   h4("Session Date"),
+                   selectizeInput(inputId = "sessionSelect",
+                               label = NULL,
+                               choices = NULL),
+                   
+                   h4("Warmup/Live/Both?"),
+                   checkboxGroupInput(inputId = "warmupLiveSelect",
+                                      label = NULL,
+                                      choices = c("Warmup" = "w",
+                                                  "Live" = "l")
+                                      )
+                   
+                 )
+               ),
+               
+
+             ), 
+             
+             mainPanel = mainPanel()
+           )
+  )
 )
 ```
 
@@ -53,8 +110,44 @@ ui <- navbarPage(
 ```{r Server}
 server <- function(input, output, session) {
   
+  flags <- reactiveValues(ps = NULL, ss = NULL)
+  
+  updateSelectInput(
+    
+    session = session,
+    inputId = "playerSelect",
+    # QUERY: Return all names of pitchers in alphabetical order.
+    choices = queryDB("SELECT DISTINCT Pitcher FROM TestData
+                              ORDER BY Pitcher ASC"),
+    selected = NULL
+    
+  )
+  
+  observeEvent(input$playerSelect,
+               {
+                 flags$ps <- input$playerSelect
+                 
+                 updateSelectizeInput(session = session,
+                                   inputId = "sessionSelect",
+                                   # QUERY: For a pitcher, obtain
+                                   #        all dates of prev. sessions.
+                                   choices = obtainSession(flags$ps)
+                 )
+                 
+                 flags$ss <- input$sessionSelect
+                 
+               }
+  )
+  
+  session$onSessionEnded(function() {
+    dbDisconnect(db)
+  })
 }
+```
+
+```{r main}
 
 shinyApp(ui, server)
 ```
+
 
