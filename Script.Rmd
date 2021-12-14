@@ -36,11 +36,10 @@ library(dplyr)
 library(shinythemes)
 ```
 
-```{r Dataset message = FALSE, warning = FALSE}
+```{r Functions message = FALSE, warning = FALSE}
 library(DBI)
 library(dbplyr)
 library(RSQLite)
-db <- dbConnect(RSQLite::SQLite(), "data.sqlite")
 
 queryDB <- function(query) {
   return(dbGetQuery(db, query))
@@ -106,13 +105,26 @@ ui <- dashboardPage(
             )
             
           )
+        ),
+        
+        fluidRow(
+          
+          box(title = "Pitch Locations"),
+          box(title = "Velo & Spin Graphs")
+          
+        ),
+        
+        fluidRow(
+          box(title = "Previous Notes",
+              width = 9),
+          box(title = "Add Notes", 
+              width = 3)
         )
       )
     )
   )
 )
 ```
-
 
 ```{r Server}
 server <- function(input, output, session) {
@@ -159,8 +171,22 @@ server <- function(input, output, session) {
 }
 ```
 
-```{r main}
-shinyApp(ui, server)
+```{r Database}
+# Run This Code Before shinyApp()
+db <- dbConnect(RSQLite::SQLite(), "data.sqlite")
+
+suppressWarnings( 
+  expr = {
+    cols <- names(queryDB("SELECT * FROM TestData"))
+    for (col in cols) {
+      q <- gsub(pattern = "_", replacement = col, x = "UPDATE TestData SET _ = NULL WHERE _ = '' ")
+      queryDB(q)
+    }
+  }
+)
 ```
 
+```{r Main}
+shinyApp(ui, server)
+```
 
