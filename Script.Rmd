@@ -55,53 +55,60 @@ obtainSession <- function(player) {
 ```
 
 ```{r UI}
-ui <- navbarPage(
+ui <- dashboardPage(
   title = "The Tar Pen",
-  theme = shinytheme("lumen"),
-  
-  tabPanel("Homepage", 
-           fluid = TRUE,
-           icon = icon("home"),
-           
-           sidebarLayout(
-             
-             sidebarPanel = sidebarPanel(
-               
-               width = 3,
-               
-               titlePanel("Specify Information"),
-               
-               fluidRow(
-                 column(
-                   
-                   width = 8,
-                   offset = 0,
-                   
-                   h4("Name"),
-                   selectInput(inputId = "playerSelect",
+  header = dashboardHeader(),
+  sidebar = dashboardSidebar(
+    sidebarMenu(
+    menuItem(text = "Start Here", 
+             tabName = "start",
+             icon = icon("home"))
+    )
+  ),
+  body = dashboardBody(
+    
+    tabItems(
+      
+      tabItem(
+        tabName = "start",
+        
+        fluidRow(
+          column(
+            
+            width = 3,
+            offset = 0,
+            
+            h3("Player Name"),
+            selectInput(inputId = "playerSelect",
+                        label = NULL,
+                        choices = NULL)
+            ),
+            
+          column(
+            width = 3, 
+            offset = 0,
+            
+            h3("Session Date"),
+            selectizeInput(inputId = "sessionSelect",
+                           label = NULL,
+                           choices = NULL)
+            ),
+          
+          column(
+            width = 2, 
+            offset = 0,
+            
+            h3("Warmup/Live/Both?"),
+            checkboxGroupInput(inputId = "warmupLiveSelect",
                                label = NULL,
-                               choices = NULL),
-                   
-                   h4("Session Date"),
-                   selectizeInput(inputId = "sessionSelect",
-                               label = NULL,
-                               choices = NULL),
-                   
-                   h4("Warmup/Live/Both?"),
-                   checkboxGroupInput(inputId = "warmupLiveSelect",
-                                      label = NULL,
-                                      choices = c("Warmup" = "w",
-                                                  "Live" = "l")
-                                      )
-                   
-                 )
-               ),
-               
-
-             ), 
-             
-             mainPanel = mainPanel()
-           )
+                               choices = c("Warmup" = "w",
+                                           "Live" = "l")
+            )
+            
+          )
+        )
+      )
+    )
   )
 )
 ```
@@ -110,7 +117,7 @@ ui <- navbarPage(
 ```{r Server}
 server <- function(input, output, session) {
   
-  flags <- reactiveValues(ps = NULL, ss = NULL)
+  flags <- reactiveValues(ps = NULL, ss = NULL, w = NULL, l = NULL)
   
   updateSelectInput(
     
@@ -128,16 +135,23 @@ server <- function(input, output, session) {
                  flags$ps <- input$playerSelect
                  
                  updateSelectizeInput(session = session,
-                                   inputId = "sessionSelect",
-                                   # QUERY: For a pitcher, obtain
-                                   #        all dates of prev. sessions.
-                                   choices = obtainSession(flags$ps)
+                                      inputId = "sessionSelect",
+                                      # QUERY: For a pitcher, obtain
+                                      #        all dates of prev. sessions.
+                                      choices = obtainSession(flags$ps)
                  )
                  
                  flags$ss <- input$sessionSelect
                  
                }
   )
+  
+  observeEvent(input$warmupLiveSelect, 
+               {
+                 # When using, check if not NA
+                 flags$w <- input$warmupLiveSelect[1]
+                 flags$l <- input$warmupLiveSelect[2]
+               })
   
   session$onSessionEnded(function() {
     dbDisconnect(db)
@@ -146,7 +160,6 @@ server <- function(input, output, session) {
 ```
 
 ```{r main}
-
 shinyApp(ui, server)
 ```
 
