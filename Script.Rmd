@@ -41,13 +41,36 @@ library(DBI)
 library(dbplyr)
 library(RSQLite)
 
-queryDB <- function(query) {
-  return(dbGetQuery(db, query))
+addTableDB <- function(conn, filename, tablename) {
+  
+  tables <- unname(as.list(queryDB(conn, "SELECT name FROM sqlite_master")))
+  if (!(tablename %in% tables)) {
+    fn <- read.csv(filename)
+    dbWriteTable(conn, tablename, fn)
+    
+    suppressWarnings( 
+      expr = {
+        cols <- names(queryDB(gsub(pattern = "_", replacement = tablename, x = "SELECT * FROM _")))
+        for (col in cols) {
+          q <- gsub(pattern = "_", replacement = col, 
+                    x = gsub(pattern = "-",
+                             replacement = tablename, 
+                             x = "UPDATE - SET _ = NULL WHERE _ = '' "))
+          queryDB(q)
+        }
+      }
+    )
+    
+  }
+}
+
+queryDB <- function(conn, query) {
+  return(dbGetQuery(conn, query))
 }
 
 obtainSession <- function(player) {
   q <- "SELECT DISTINCT Date FROM TestData WHERE Pitcher = '_'"
-  result <- list(unname(queryDB(gsub(pattern = '_', replacement = player, x = q)))[[1]])
+  result <- list(unname(queryDB(conn, gsub(pattern = '_', replacement = player, x = q)))[[1]])
   names(result) <- result
   return(result)
 }
@@ -116,9 +139,11 @@ ui <- dashboardPage(
         
         fluidRow(
           box(title = "Previous Notes",
-              width = 9),
+              width = 7),
           box(title = "Add Notes", 
-              width = 3)
+              width = 5,
+              textInput(inputId = "notesInput", label = "Enter Note Here"),
+              actionButton(inputId = "notesSubmit", label = "Add Note"))
         )
       )
     )
@@ -129,6 +154,8 @@ ui <- dashboardPage(
 ```{r Server}
 server <- function(input, output, session) {
   
+  # 'conn' is a GLOBAL var
+  
   flags <- reactiveValues(ps = NULL, ss = NULL, w = NULL, l = NULL)
   
   updateSelectInput(
@@ -136,7 +163,7 @@ server <- function(input, output, session) {
     session = session,
     inputId = "playerSelect",
     # QUERY: Return all names of pitchers in alphabetical order.
-    choices = queryDB("SELECT DISTINCT Pitcher FROM TestData
+    choices = queryDB(conn, "SELECT DISTINCT Pitcher FROM TestData
                               ORDER BY Pitcher ASC"),
     selected = NULL
     
@@ -165,28 +192,28 @@ server <- function(input, output, session) {
                  flags$l <- input$warmupLiveSelect[2]
                })
   
+  observeEvent(input$notesSubmit, 
+               {
+                 print(input$notesInput)
+               })
+  
   session$onSessionEnded(function() {
-    dbDisconnect(db)
+    dbDisconnect(conn)
   })
 }
 ```
 
-```{r Database}
-# Run This Code Before shinyApp()
-db <- dbConnect(RSQLite::SQLite(), "data.sqlite")
-
-suppressWarnings( 
-  expr = {
-    cols <- names(queryDB("SELECT * FROM TestData"))
-    for (col in cols) {
-      q <- gsub(pattern = "_", replacement = col, x = "UPDATE TestData SET _ = NULL WHERE _ = '' ")
-      queryDB(q)
-    }
-  }
-)
-```
-
 ```{r Main}
+### MAIN CHUNK ###
+
+# Run This Code Before shinyApp()
+# Use a .sqlite extension, not a .db
+# Also, this doesn't have to exist already
+conn <- dbConnect(RSQLite::SQLite(), "bullpen.sqlite")
+addTableDB(conn, "TestData.csv", "TestData")
+
 shinyApp(ui, server)
 ```
+
+
 
