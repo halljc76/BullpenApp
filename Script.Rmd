@@ -42,21 +42,30 @@ library(dbplyr)
 library(RSQLite)
 
 addTableDB <- function(conn, filename, tablename) {
+  tables <- c(unname(as.list(queryDB(conn, "SELECT name FROM sqlite_master"))))
+  if (!(tablename %in% tables[[1]])) {
+    fn <- read.csv(filename)
+    dbWriteTable(conn, tablename, fn)
+  }
+}
+
+addData <- function(conn, filename, tablename) {
   
-  tables <- unname(as.list(queryDB(conn, "SELECT name FROM sqlite_master")))
-  if (!(tablename %in% tables)) {
+  tables <- c(unname(as.list(queryDB(conn, "SELECT name FROM sqlite_master"))))
+  
+  if (!(tablename %in% tables[[1]])) {
     fn <- read.csv(filename)
     dbWriteTable(conn, tablename, fn)
     
     suppressWarnings( 
       expr = {
-        cols <- names(queryDB(gsub(pattern = "_", replacement = tablename, x = "SELECT * FROM _")))
+        cols <- names(queryDB(conn, gsub(pattern = "_", replacement = tablename, x = "SELECT * FROM _")))
         for (col in cols) {
           q <- gsub(pattern = "_", replacement = col, 
                     x = gsub(pattern = "-",
                              replacement = tablename, 
                              x = "UPDATE - SET _ = NULL WHERE _ = '' "))
-          queryDB(q)
+          queryDB(conn, q)
         }
       }
     )
@@ -73,6 +82,17 @@ obtainSession <- function(player) {
   result <- list(unname(queryDB(conn, gsub(pattern = '_', replacement = player, x = q)))[[1]])
   names(result) <- result
   return(result)
+}
+
+getDate <- function() {
+  date <- Sys.Date()
+  return(
+  gsub(pattern = " ",
+       replacement = "",
+       x= paste(substr(date, 6, 7), "/", 
+                substr(date, 9, 10), "/", 
+                substr(date, 1, 4)))
+  )
 }
 ```
 
@@ -194,7 +214,13 @@ server <- function(input, output, session) {
   
   observeEvent(input$notesSubmit, 
                {
-                 print(input$notesInput)
+                 queryDB(conn, 
+                         paste("INSERT INTO Notes VALUES ", "('", 
+                               input$playerSelect, "'", ", '", 
+                               getDate(), "'", ", '", 
+                               input$notesInput, "'", ")", sep = ""
+                               )
+                         )
                })
   
   session$onSessionEnded(function() {
@@ -210,10 +236,13 @@ server <- function(input, output, session) {
 # Use a .sqlite extension, not a .db
 # Also, this doesn't have to exist already
 conn <- dbConnect(RSQLite::SQLite(), "bullpen.sqlite")
-addTableDB(conn, "TestData.csv", "TestData")
+addData(conn, "TestData.csv", "TestData")
 
+# DO NOT CHANGE THIS LINE :)
+invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date text, Note text)"))
 shinyApp(ui, server)
 ```
+
 
 
 
