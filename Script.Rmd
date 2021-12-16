@@ -159,11 +159,14 @@ ui <- dashboardPage(
         
         fluidRow(
           box(title = "Previous Notes",
-              width = 7),
+              width = 7,
+              dataTableOutput(outputId = "notesDisplay")
+              ),
           box(title = "Add Notes", 
               width = 5,
               textInput(inputId = "notesInput", label = "Enter Note Here"),
-              actionButton(inputId = "notesSubmit", label = "Add Note"))
+              actionButton(inputId = "notesSubmit", label = "Add Note")
+              )
         )
       )
     )
@@ -177,6 +180,17 @@ server <- function(input, output, session) {
   # 'conn' is a GLOBAL var
   
   flags <- reactiveValues(ps = NULL, ss = NULL, w = NULL, l = NULL)
+  
+  output$notesDisplay <- renderDataTable(
+                         expr = {
+                           queryDB(conn,
+                                   paste("SELECT * FROM Notes 
+                                          WHERE Pitcher = '", 
+                                         input$playerSelect, "'", 
+                                         "\n ORDER BY Date DESC", sep = "")
+                           )
+                         }
+                        )
   
   updateSelectInput(
     
@@ -221,6 +235,22 @@ server <- function(input, output, session) {
                                input$notesInput, "'", ")", sep = ""
                                )
                          )
+                 updateTextInput(session = session,
+                                 inputId = "notesInput", 
+                                 label = "Enter Note Here",
+                                 value = " "
+                                 )
+                 
+                 output$notesDisplay <- renderDataTable(
+                   expr = {
+                     queryDB(conn,
+                             paste("SELECT Date, Note FROM Notes 
+                                    WHERE Pitcher = '", 
+                                   input$playerSelect, "'", 
+                                   "\n ORDER BY Date DESC", sep = "")
+                     )
+                   }
+                 )
                })
   
   session$onSessionEnded(function() {
@@ -242,7 +272,4 @@ addData(conn, "TestData.csv", "TestData")
 invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date text, Note text)"))
 shinyApp(ui, server)
 ```
-
-
-
 
