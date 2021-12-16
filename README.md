@@ -4,6 +4,6 @@ This application is the standalone version of what will be implemented into the
 main application. 
 
 Players using the Bullpen can sign-in to have the capability
-to add notes to sessions identifying performance goals or future aspirations.
+to add notes to sessions, identifying performance goals or future aspirations.
 The goal for this application is to be a place where players can qualitatively 
 reflect on their game preparations.

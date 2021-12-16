@@ -117,12 +117,13 @@ locationDist <- function(warmupFlag, liveFlag, pitcher) {
                   gsub(pattern = "_",
                        replacement = pitcher,
                        x = "SELECT PlateLocSide, PlateLocHeight, 
-                                   TaggedPitchType
+                                   TaggedPitchType, Tilt, ZoneSpeed
                            FROM TestData
                           WHERE PitchSession != 'Live'
                           AND Pitcher = '_'
                           AND PlateLocSide IS NOT NULL
-                          AND PlateLocHeight IS NOT NULL"
+                          AND PlateLocHeight IS NOT NULL
+                          AND ZoneSpeed IS NOT NULL"
                        )
             )
   }
@@ -132,12 +133,13 @@ locationDist <- function(warmupFlag, liveFlag, pitcher) {
                   gsub(pattern = "_",
                        replacement = pitcher,
                        x = "SELECT PlateLocSide, PlateLocHeight, 
-                                   TaggedPitchType
+                                   TaggedPitchType, Tilt, ZoneSpeed
                            FROM TestData
                           WHERE PitchSession != 'Warmup'
                           AND Pitcher = '_'
                           AND PlateLocSide IS NOT NULL
-                          AND PlateLocHeight IS NOT NULL"
+                          AND PlateLocHeight IS NOT NULL
+                          AND ZoneSpeed IS NOT NULL"
                        )
             )
   }
@@ -148,11 +150,12 @@ locationDist <- function(warmupFlag, liveFlag, pitcher) {
                   gsub(pattern = "_",
                        replacement = pitcher,
                        x = "SELECT PlateLocSide, PlateLocHeight, 
-                                   TaggedPitchType
+                                   TaggedPitchType, Tilt, ZoneSpeed
                            FROM TestData
                            WHERE Pitcher = '_'
                            AND PlateLocSide IS NOT NULL
-                           AND PlateLocHeight IS NOT NULL"
+                           AND PlateLocHeight IS NOT NULL
+                           AND ZoneSpeed IS NOT NULL"
                        )
             )
   }
@@ -164,7 +167,10 @@ locationDist <- function(warmupFlag, liveFlag, pitcher) {
       mode = "markers",
       x = df$PlateLocSide,
       y = df$PlateLocHeight,
-      color = ~as.factor(df$TaggedPitchType)
+      color = ~as.factor(df$TaggedPitchType),
+      hoverinfo = "text",
+      text = ~paste(df$TaggedPitchType, "\nTilt: ", df$Tilt, 
+                    "\nVelo: ", round(df$ZoneSpeed, 1), " MPH", sep = "")
     ) %>% layout(
       shapes = list(type = "rect",
                line = list(color = "blue"),
@@ -366,9 +372,3 @@ addData(conn, "TestData.csv", "TestData")
 invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date text, Note text)"))
 shinyApp(ui, server)
 ```
-
-
-```{r}
-locationDist(T, F, "Sandy, Will")
-```
-
