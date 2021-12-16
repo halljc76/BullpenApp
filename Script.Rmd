@@ -16,7 +16,7 @@ Carter Hall
 
 - Pitch Plot for Session (Location, SZ)
 - CheckboxGroup for Session Date(s)
-- CheckboxGroup for Warmup/Live (Live standard opt.) --> Implement this in Server
+- CheckboxGroup for Warmup/Live (Live standard opt.)
 - SZ Toggle
 - Baseball Image Toggle???
 
@@ -24,7 +24,6 @@ Carter Hall
 - Use CG for Session Date(s)
 - Dropdown to Specify Metric(s)
 - Limit 2-3? Use 320 Stuff to Section Graph (GGPlot... Future Conversion to Plotly? )
-
 
 ```{r Libraries, message = FALSE, warning = FALSE}
 options(shiny.maxRequestSize = 50*1024^2)
@@ -34,6 +33,7 @@ library(DT)
 library(ggplot2)
 library(dplyr)
 library(shinythemes)
+library(plotly)
 ```
 
 ```{r Functions message = FALSE, warning = FALSE}
@@ -51,6 +51,7 @@ addTableDB <- function(conn, filename, tablename) {
 
 addData <- function(conn, filename, tablename) {
   
+  # QUERY: Get all names of tables in database.
   tables <- c(unname(as.list(queryDB(conn, "SELECT name FROM sqlite_master"))))
   
   if (!(tablename %in% tables[[1]])) {
@@ -61,6 +62,7 @@ addData <- function(conn, filename, tablename) {
       expr = {
         cols <- names(queryDB(conn, gsub(pattern = "_", replacement = tablename, x = "SELECT * FROM _")))
         for (col in cols) {
+          # Query: Set any blank field from TM to be a null value.
           q <- gsub(pattern = "_", replacement = col, 
                     x = gsub(pattern = "-",
                              replacement = tablename, 
@@ -68,6 +70,15 @@ addData <- function(conn, filename, tablename) {
           queryDB(conn, q)
         }
       }
+    )
+    
+    queryDB(conn, gsub(
+                  pattern = "-",
+                  replacement = tablename,
+                  # QUERY: Redefine 'Undefined' pitches to 'Warmup'
+                  x = "UPDATE - SET TaggedPitchType = 'Warmup' 
+                  WHERE TaggedPitchType = 'Undefined' "
+                  )
     )
     
   }
@@ -78,6 +89,7 @@ queryDB <- function(conn, query) {
 }
 
 obtainSession <- function(player) {
+  # QUERY: Return a list of days when this player logged sessions.
   q <- "SELECT DISTINCT Date FROM TestData WHERE Pitcher = '_'"
   result <- list(unname(queryDB(conn, gsub(pattern = '_', replacement = player, x = q)))[[1]])
   names(result) <- result
@@ -93,6 +105,81 @@ getDate <- function() {
                 substr(date, 9, 10), "/", 
                 substr(date, 1, 4)))
   )
+}
+
+
+locationDist <- function(warmupFlag, liveFlag, pitcher) {
+
+  # QUERY: All queries in this function select (y,z) and pitch type.
+  
+  if (warmupFlag == TRUE && liveFlag == FALSE) {
+    df <- queryDB(conn, 
+                  gsub(pattern = "_",
+                       replacement = pitcher,
+                       x = "SELECT PlateLocSide, PlateLocHeight, 
+                                   TaggedPitchType
+                           FROM TestData
+                          WHERE PitchSession != 'Live'
+                          AND Pitcher = '_'
+                          AND PlateLocSide IS NOT NULL
+                          AND PlateLocHeight IS NOT NULL"
+                       )
+            )
+  }
+  
+  if (warmupFlag == FALSE && liveFlag == TRUE) {
+    df <- queryDB(conn, 
+                  gsub(pattern = "_",
+                       replacement = pitcher,
+                       x = "SELECT PlateLocSide, PlateLocHeight, 
+                                   TaggedPitchType
+                           FROM TestData
+                          WHERE PitchSession != 'Warmup'
+                          AND Pitcher = '_'
+                          AND PlateLocSide IS NOT NULL
+                          AND PlateLocHeight IS NOT NULL"
+                       )
+            )
+  }
+  
+  # If both or neither are selected, just plot everything.
+  if (warmupFlag == liveFlag) {
+    df <- queryDB(conn, 
+                  gsub(pattern = "_",
+                       replacement = pitcher,
+                       x = "SELECT PlateLocSide, PlateLocHeight, 
+                                   TaggedPitchType
+                           FROM TestData
+                           WHERE Pitcher = '_'
+                           AND PlateLocSide IS NOT NULL
+                           AND PlateLocHeight IS NOT NULL"
+                       )
+            )
+  }
+  
+  
+  fig <- suppressMessages(
+    plot_ly(
+      type = "scatter",
+      mode = "markers",
+      x = df$PlateLocSide,
+      y = df$PlateLocHeight,
+      color = ~as.factor(df$TaggedPitchType)
+    ) %>% layout(
+      shapes = list(type = "rect",
+               line = list(color = "blue"),
+               x0 = -0.783333, 
+               x1 = 0.783333,
+               xref = "x",
+               y0 = 1.525,
+               y1 = 3.316,
+               yref = "y"),
+      xaxis = list(range = c(-2, 2)),
+      yaxis = list(range = c(-0.5, 4))
+    ) 
+  )
+  
+  return(fig)
 }
 ```
 
@@ -141,18 +228,22 @@ ui <- dashboardPage(
             offset = 0,
             
             h3("Warmup/Live/Both?"),
-            checkboxGroupInput(inputId = "warmupLiveSelect",
-                               label = NULL,
-                               choices = c("Warmup" = "w",
-                                           "Live" = "l")
-            )
-            
+            checkboxInput(inputId = "warmupSelect",
+                          label = "Warmup",
+                          value = FALSE),
+            checkboxInput(inputId = "liveSelect",
+                          label = "Live",
+                          value = TRUE)
           )
         ),
         
         fluidRow(
           
-          box(title = "Pitch Locations"),
+          # Graph pitches by location
+          # Table of most-often tilts
+          
+          box(title = "Strikezone Plot (Blue Rect.)",
+              plotlyOutput(outputId = "szDisplay")),
           box(title = "Velo & Spin Graphs")
           
         ),
@@ -179,18 +270,7 @@ server <- function(input, output, session) {
   
   # 'conn' is a GLOBAL var
   
-  flags <- reactiveValues(ps = NULL, ss = NULL, w = NULL, l = NULL)
-  
-  output$notesDisplay <- renderDataTable(
-                         expr = {
-                           queryDB(conn,
-                                   paste("SELECT * FROM Notes 
-                                          WHERE Pitcher = '", 
-                                         input$playerSelect, "'", 
-                                         "\n ORDER BY Date DESC", sep = "")
-                           )
-                         }
-                        )
+  flags <- reactiveValues(ps = NULL, ss = NULL)
   
   updateSelectInput(
     
@@ -219,16 +299,38 @@ server <- function(input, output, session) {
                }
   )
   
-  observeEvent(input$warmupLiveSelect, 
-               {
-                 # When using, check if not NA
-                 flags$w <- input$warmupLiveSelect[1]
-                 flags$l <- input$warmupLiveSelect[2]
-               })
+  observeEvent(input$warmupSelect || input$liveSelect, 
+      output$szDisplay <- renderPlotly(
+        expr = {
+          if (input$warmupSelect && input$liveSelect) {
+            locationDist(T, T, flags$ps)
+          }
+          else if (input$liveSelect && !(input$warmupSelect)) {
+            locationDist(F, T, flags$ps)
+          }
+          else {
+          locationDist(T, F, flags$ps)
+          }
+        }
+      )
+  )
+  
+  output$notesDisplay <- renderDataTable(
+                   expr = {
+                     # QUERY: Select all notes and dates for this pitcher.
+                     queryDB(conn,
+                             paste("SELECT Date, Note FROM Notes 
+                                    WHERE Pitcher = '", 
+                                   input$playerSelect, "'", 
+                                   "\n ORDER BY Date DESC", sep = "")
+                     )
+                   }
+                 )
   
   observeEvent(input$notesSubmit, 
                {
                  queryDB(conn, 
+                         # QUERY: Insert a new note, marked today.
                          paste("INSERT INTO Notes VALUES ", "('", 
                                input$playerSelect, "'", ", '", 
                                getDate(), "'", ", '", 
@@ -240,17 +342,6 @@ server <- function(input, output, session) {
                                  label = "Enter Note Here",
                                  value = " "
                                  )
-                 
-                 output$notesDisplay <- renderDataTable(
-                   expr = {
-                     queryDB(conn,
-                             paste("SELECT Date, Note FROM Notes 
-                                    WHERE Pitcher = '", 
-                                   input$playerSelect, "'", 
-                                   "\n ORDER BY Date DESC", sep = "")
-                     )
-                   }
-                 )
                })
   
   session$onSessionEnded(function() {
@@ -266,10 +357,18 @@ server <- function(input, output, session) {
 # Use a .sqlite extension, not a .db
 # Also, this doesn't have to exist already
 conn <- dbConnect(RSQLite::SQLite(), "bullpen.sqlite")
+
+# Make SURE the final param in this call matches the 
+# corresponding name given to the server-side queries!!!
 addData(conn, "TestData.csv", "TestData")
 
 # DO NOT CHANGE THIS LINE :)
 invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date text, Note text)"))
 shinyApp(ui, server)
+```
+
+
+```{r}
+locationDist(T, F, "Sandy, Will")
 ```
 
