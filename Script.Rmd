@@ -73,12 +73,12 @@ addData <- function(conn, filename, tablename) {
     )
     
     queryDB(conn, gsub(
-                  pattern = "-",
-                  replacement = tablename,
-                  # QUERY: Redefine 'Undefined' pitches to 'Warmup'
-                  x = "UPDATE - SET TaggedPitchType = 'Warmup' 
+      pattern = "-",
+      replacement = tablename,
+      # QUERY: Redefine 'Undefined' pitches to 'Warmup'
+      x = "UPDATE - SET TaggedPitchType = 'Warmup' 
                   WHERE TaggedPitchType = 'Undefined' "
-                  )
+    )
     )
     
   }
@@ -99,17 +99,80 @@ obtainSession <- function(player) {
 getDate <- function() {
   date <- Sys.Date()
   return(
-  gsub(pattern = " ",
-       replacement = "",
-       x= paste(substr(date, 6, 7), "/", 
-                substr(date, 9, 10), "/", 
-                substr(date, 1, 4)))
+    gsub(pattern = " ",
+         replacement = "",
+         x= paste(substr(date, 6, 7), "/", 
+                  substr(date, 9, 10), "/", 
+                  substr(date, 1, 4)))
   )
 }
 
 
-locationDist <- function(warmupFlag, liveFlag, pitcher) {
+summaryStats <- function(pitcher) {
+  df <- locationDist(F, T, pitcher, F)
+  
+  tot <- 0
+  pct <- c()
+  names <- c()
+  avgVelos <- c()
+  avgSpins <- c()
+  i = 1
+  for (pt in unique(df$TaggedPitchType)) {
+    ct <- unname(
+      as.list(
+        queryDB(
+          conn, 
+          query = gsub(pattern = '_', replacement = pt,
+                       x = gsub(pattern = '--',replacement = pitcher,
+                                x = "SELECT COUNT(*) 
+                                       FROM TestData
+                                      WHERE TaggedPitchType = '_'
+                                        AND TaggedPitchType != 'Warmup'
+                                        AND Pitcher = '--'"))))[[1]])
+    
+    avgVelo <- unname(
+      as.list(
+        queryDB(
+          conn, 
+          query = gsub(pattern = '_', replacement = pt,
+                       x = gsub(pattern = '--',replacement = pitcher,
+                                x = "SELECT AVG(ZoneSpeed) 
+                                       FROM TestData
+                                      WHERE TaggedPitchType = '_'
+                                        AND TaggedPitchType != 'Warmup'
+                                        AND Pitcher = '--'"))))[[1]])
+    
+    avgSpin <- unname(
+      as.list(
+        queryDB(
+          conn, 
+          query = gsub(pattern = '_', replacement = pt,
+                       x = gsub(pattern = '--',replacement = pitcher,
+                                x = "SELECT AVG(SpinRate) 
+                                       FROM TestData
+                                      WHERE TaggedPitchType = '_'
+                                        AND TaggedPitchType != 'Warmup'
+                                        AND Pitcher = '--'"))))[[1]])
+    
+    tot = tot + ct
+    pct[i] <- ct
+    names[i] <- pt
+    avgVelos[i] <- avgVelo
+    avgSpins[i] <- avgSpin
+    i = i + 1
+  }
+  
+  pct <- round(pct / tot, digit = 2)
+  avgVelos <- round(avgVelos, digit = 2)
+  avgSpins <- round(avgSpins, digit = 0)
+  ret <- data.frame(pitches = names, percents = pct, 
+                    avgVelos = avgVelos, avgSpins = avgSpins)
+  colnames(ret) <- c("Pitch", "% Thrown", "Avg. Velo", "Avg. Spin")
+  return(ret)
+}
 
+locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool) {
+  
   # QUERY: All queries in this function select (y,z) and pitch type.
   
   if (warmupFlag == TRUE && liveFlag == FALSE) {
@@ -124,8 +187,8 @@ locationDist <- function(warmupFlag, liveFlag, pitcher) {
                           AND PlateLocSide IS NOT NULL
                           AND PlateLocHeight IS NOT NULL
                           AND ZoneSpeed IS NOT NULL"
-                       )
-            )
+                  )
+    )
   }
   
   if (warmupFlag == FALSE && liveFlag == TRUE) {
@@ -140,8 +203,8 @@ locationDist <- function(warmupFlag, liveFlag, pitcher) {
                           AND PlateLocSide IS NOT NULL
                           AND PlateLocHeight IS NOT NULL
                           AND ZoneSpeed IS NOT NULL"
-                       )
-            )
+                  )
+    )
   }
   
   # If both or neither are selected, just plot everything.
@@ -156,36 +219,39 @@ locationDist <- function(warmupFlag, liveFlag, pitcher) {
                            AND PlateLocSide IS NOT NULL
                            AND PlateLocHeight IS NOT NULL
                            AND ZoneSpeed IS NOT NULL"
-                       )
-            )
+                  )
+    )
   }
   
+  if (plotBool){
+    fig <- suppressMessages(
+      plot_ly(
+        type = "scatter",
+        mode = "markers",
+        x = df$PlateLocSide,
+        y = df$PlateLocHeight,
+        color = ~as.factor(df$TaggedPitchType),
+        hoverinfo = "text",
+        text = ~paste(df$TaggedPitchType, "\nTilt: ", df$Tilt, 
+                      "\nVelo: ", round(df$ZoneSpeed, 1), " MPH", sep = "")
+      ) %>% layout(
+        shapes = list(type = "rect",
+                      line = list(color = "blue"),
+                      x0 = -0.783333, 
+                      x1 = 0.783333,
+                      xref = "x",
+                      y0 = 1.525,
+                      y1 = 3.316,
+                      yref = "y"),
+        xaxis = list(range = c(-2, 2)),
+        yaxis = list(range = c(-0.5, 4))
+      ) 
+    )
+    
+    return(fig)
+  }
   
-  fig <- suppressMessages(
-    plot_ly(
-      type = "scatter",
-      mode = "markers",
-      x = df$PlateLocSide,
-      y = df$PlateLocHeight,
-      color = ~as.factor(df$TaggedPitchType),
-      hoverinfo = "text",
-      text = ~paste(df$TaggedPitchType, "\nTilt: ", df$Tilt, 
-                    "\nVelo: ", round(df$ZoneSpeed, 1), " MPH", sep = "")
-    ) %>% layout(
-      shapes = list(type = "rect",
-               line = list(color = "blue"),
-               x0 = -0.783333, 
-               x1 = 0.783333,
-               xref = "x",
-               y0 = 1.525,
-               y1 = 3.316,
-               yref = "y"),
-      xaxis = list(range = c(-2, 2)),
-      yaxis = list(range = c(-0.5, 4))
-    ) 
-  )
-  
-  return(fig)
+  return(df)
 }
 ```
 
@@ -195,9 +261,9 @@ ui <- dashboardPage(
   header = dashboardHeader(),
   sidebar = dashboardSidebar(
     sidebarMenu(
-    menuItem(text = "Start Here", 
-             tabName = "start",
-             icon = icon("home"))
+      menuItem(text = "Start Here", 
+               tabName = "start",
+               icon = icon("home"))
     )
   ),
   body = dashboardBody(
@@ -217,8 +283,8 @@ ui <- dashboardPage(
             selectInput(inputId = "playerSelect",
                         label = NULL,
                         choices = NULL)
-            ),
-            
+          ),
+          
           column(
             width = 3, 
             offset = 0,
@@ -227,7 +293,7 @@ ui <- dashboardPage(
             selectizeInput(inputId = "sessionSelect",
                            label = NULL,
                            choices = NULL)
-            ),
+          ),
           
           column(
             width = 2, 
@@ -244,6 +310,24 @@ ui <- dashboardPage(
         ),
         
         fluidRow(
+          box(title = "Previous Notes",
+              width = 7,
+              div(style = "display:inline-block",
+                  textInput(inputId = "notesInput", 
+                            label = "Enter Note Here")),
+              div(style = "display:inline-block",
+                  actionButton(inputId = "notesSubmit", 
+                               label = "Add Note")),
+              dataTableOutput(outputId = "notesDisplay"),
+              
+          ),
+          box(title = "Summary Statistics", 
+              width = 5,
+              dataTableOutput(outputId = "summStatsDisplay")
+          )
+        ),
+        
+        fluidRow(
           
           # Graph pitches by location
           # Table of most-often tilts
@@ -252,18 +336,6 @@ ui <- dashboardPage(
               plotlyOutput(outputId = "szDisplay")),
           box(title = "Velo & Spin Graphs")
           
-        ),
-        
-        fluidRow(
-          box(title = "Previous Notes",
-              width = 7,
-              dataTableOutput(outputId = "notesDisplay")
-              ),
-          box(title = "Add Notes", 
-              width = 5,
-              textInput(inputId = "notesInput", label = "Enter Note Here"),
-              actionButton(inputId = "notesSubmit", label = "Add Note")
-              )
         )
       )
     )
@@ -306,32 +378,32 @@ server <- function(input, output, session) {
   )
   
   observeEvent(input$warmupSelect || input$liveSelect, 
-      output$szDisplay <- renderPlotly(
-        expr = {
-          if (input$warmupSelect && input$liveSelect) {
-            locationDist(T, T, flags$ps)
-          }
-          else if (input$liveSelect && !(input$warmupSelect)) {
-            locationDist(F, T, flags$ps)
-          }
-          else {
-          locationDist(T, F, flags$ps)
-          }
-        }
-      )
+               output$szDisplay <- renderPlotly(
+                 expr = {
+                   if (input$warmupSelect && input$liveSelect) {
+                     locationDist(T, T, flags$ps, T)
+                   }
+                   else if (input$liveSelect && !(input$warmupSelect)) {
+                     locationDist(F, T, flags$ps, T)
+                   }
+                   else {
+                     locationDist(T, F, flags$ps, T)
+                   }
+                 }
+               )
   )
   
   output$notesDisplay <- renderDataTable(
-                   expr = {
-                     # QUERY: Select all notes and dates for this pitcher.
-                     queryDB(conn,
-                             paste("SELECT Date, Note FROM Notes 
+    expr = {
+      # QUERY: Select all notes and dates for this pitcher.
+      queryDB(conn,
+              paste("SELECT Date, Note FROM Notes 
                                     WHERE Pitcher = '", 
-                                   input$playerSelect, "'", 
-                                   "\n ORDER BY Date DESC", sep = "")
-                     )
-                   }
-                 )
+                    input$playerSelect, "'", 
+                    "\n ORDER BY Date DESC", sep = "")
+      )
+    }
+  )
   
   observeEvent(input$notesSubmit, 
                {
@@ -341,14 +413,23 @@ server <- function(input, output, session) {
                                input$playerSelect, "'", ", '", 
                                getDate(), "'", ", '", 
                                input$notesInput, "'", ")", sep = ""
-                               )
                          )
+                 )
                  updateTextInput(session = session,
                                  inputId = "notesInput", 
                                  label = "Enter Note Here",
                                  value = " "
-                                 )
+                 )
                })
+  
+  output$summStatsDisplay <- renderDataTable(
+    expr = {
+      # If the UI seems to throw an error... don't know why. It works nonetheless!
+      
+      # QUERY: Get the summary statistics (pitch, percent thrown, velo, spin).
+      summaryStats(flags$ps)
+    }
+  )
   
   session$onSessionEnded(function() {
     dbDisconnect(conn)
@@ -361,7 +442,8 @@ server <- function(input, output, session) {
 
 # Run This Code Before shinyApp()
 # Use a .sqlite extension, not a .db
-# Also, this doesn't have to exist already
+# If an error of 'invalid connection' occurs somewhere, refresh this line.
+# Also, the second parameter doesn't have to exist already
 conn <- dbConnect(RSQLite::SQLite(), "bullpen.sqlite")
 
 # Make SURE the final param in this call matches the 
@@ -372,3 +454,4 @@ addData(conn, "TestData.csv", "TestData")
 invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date text, Note text)"))
 shinyApp(ui, server)
 ```
+
