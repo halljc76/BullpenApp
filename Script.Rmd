@@ -34,13 +34,12 @@ library(ggplot2)
 library(dplyr)
 library(shinythemes)
 library(plotly)
-```
-
-```{r Functions message = FALSE, warning = FALSE}
 library(DBI)
 library(dbplyr)
 library(RSQLite)
+```
 
+```{r Functions message = FALSE, warning = FALSE}
 addTableDB <- function(conn, filename, tablename) {
   tables <- c(unname(as.list(queryDB(conn, "SELECT name FROM sqlite_master"))))
   if (!(tablename %in% tables[[1]])) {
@@ -108,9 +107,8 @@ getDate <- function() {
 }
 
 
-summaryStats <- function(pitcher) {
-  df <- locationDist(F, T, pitcher, F)
-  
+summaryStats <- function(pitcher, sessionDate) {
+  df <- locationDist(F, T, pitcher, F, sessionDate)
   tot <- 0
   pct <- c()
   names <- c()
@@ -124,11 +122,13 @@ summaryStats <- function(pitcher) {
           conn, 
           query = gsub(pattern = '_', replacement = pt,
                        x = gsub(pattern = '--',replacement = pitcher,
-                                x = "SELECT COUNT(*) 
-                                       FROM TestData
-                                      WHERE TaggedPitchType = '_'
-                                        AND TaggedPitchType != 'Warmup'
-                                        AND Pitcher = '--'"))))[[1]])
+                                x = gsub(pattern = '---', replacement = sessionDate,
+                                         x = "SELECT COUNT(*) 
+                                               FROM TestData
+                                              WHERE TaggedPitchType = '_'
+                                                AND TaggedPitchType != 'Warmup'
+                                                AND Pitcher = '--'
+                                                AND Date = '---'")))))[[1]])
     
     avgVelo <- unname(
       as.list(
@@ -136,11 +136,14 @@ summaryStats <- function(pitcher) {
           conn, 
           query = gsub(pattern = '_', replacement = pt,
                        x = gsub(pattern = '--',replacement = pitcher,
-                                x = "SELECT AVG(ZoneSpeed) 
-                                       FROM TestData
-                                      WHERE TaggedPitchType = '_'
-                                        AND TaggedPitchType != 'Warmup'
-                                        AND Pitcher = '--'"))))[[1]])
+                                x = gsub(pattern = '---', replacement = sessionDate,
+                                         x = "SELECT AVG(ZoneSpeed)
+                                               FROM TestData
+                                              WHERE TaggedPitchType = '_'
+                                                AND TaggedPitchType != 'Warmup'
+                                                AND Pitcher = '--'
+                                                AND Date = '---'
+                                                AND ZoneSpeed IS NOT NULL")))))[[1]])
     
     avgSpin <- unname(
       as.list(
@@ -148,30 +151,31 @@ summaryStats <- function(pitcher) {
           conn, 
           query = gsub(pattern = '_', replacement = pt,
                        x = gsub(pattern = '--',replacement = pitcher,
-                                x = "SELECT AVG(SpinRate) 
-                                       FROM TestData
-                                      WHERE TaggedPitchType = '_'
-                                        AND TaggedPitchType != 'Warmup'
-                                        AND Pitcher = '--'"))))[[1]])
+                                x = gsub(pattern = '---', replacement = sessionDate,
+                                         x = "SELECT AVG(SpinRate)
+                                               FROM TestData
+                                              WHERE TaggedPitchType = '_'
+                                                AND TaggedPitchType != 'Warmup'
+                                                AND Pitcher = '--'
+                                                AND Date = '---'
+                                                AND SpinRate IS NOT NULL")))))[[1]])
     
     tot = tot + ct
     pct[i] <- ct
     names[i] <- pt
-    avgVelos[i] <- avgVelo
-    avgSpins[i] <- avgSpin
+    avgVelos[i] <- round(avgVelo, digit = 2)
+    avgSpins[i] <- round(avgSpin, digit = 0)
     i = i + 1
   }
   
-  pct <- round(pct / tot, digit = 2)
-  avgVelos <- round(avgVelos, digit = 2)
-  avgSpins <- round(avgSpins, digit = 0)
+  pct <- round(pct / tot, digit = 2) * 100
   ret <- data.frame(pitches = names, percents = pct, 
                     avgVelos = avgVelos, avgSpins = avgSpins)
-  colnames(ret) <- c("Pitch", "% Thrown", "Avg. Velo", "Avg. Spin")
+    colnames(ret) <- c("Pitch", "% Thrown", "Avg. Velo", "Avg. Spin")
   return(ret)
 }
 
-locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool) {
+locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
   
   # QUERY: All queries in this function select (y,z) and pitch type.
   
@@ -179,14 +183,17 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool) {
     df <- queryDB(conn, 
                   gsub(pattern = "_",
                        replacement = pitcher,
-                       x = "SELECT PlateLocSide, PlateLocHeight, 
-                                   TaggedPitchType, Tilt, ZoneSpeed
-                           FROM TestData
-                          WHERE PitchSession != 'Live'
-                          AND Pitcher = '_'
-                          AND PlateLocSide IS NOT NULL
-                          AND PlateLocHeight IS NOT NULL
-                          AND ZoneSpeed IS NOT NULL"
+                       x = gsub(pattern = '--', replacement = sessionDate,
+                               x = "SELECT PlateLocSide, PlateLocHeight, 
+                                           TaggedPitchType, Tilt, ZoneSpeed
+                                   FROM TestData
+                                  WHERE PitchSession != 'Live'
+                                  AND Pitcher = '_'
+                                  AND Date = '--'
+                                  AND PlateLocSide IS NOT NULL
+                                  AND PlateLocHeight IS NOT NULL
+                                  AND ZoneSpeed IS NOT NULL"
+                               )
                   )
     )
   }
@@ -195,14 +202,17 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool) {
     df <- queryDB(conn, 
                   gsub(pattern = "_",
                        replacement = pitcher,
-                       x = "SELECT PlateLocSide, PlateLocHeight, 
-                                   TaggedPitchType, Tilt, ZoneSpeed
-                           FROM TestData
-                          WHERE PitchSession != 'Warmup'
-                          AND Pitcher = '_'
-                          AND PlateLocSide IS NOT NULL
-                          AND PlateLocHeight IS NOT NULL
-                          AND ZoneSpeed IS NOT NULL"
+                       x = gsub(pattern = '--', replacement = sessionDate,
+                               x = "SELECT PlateLocSide, PlateLocHeight, 
+                                           TaggedPitchType, Tilt, ZoneSpeed
+                                   FROM TestData
+                                  WHERE PitchSession != 'Warmup'
+                                  AND Pitcher = '_'
+                                  AND Date = '--'
+                                  AND PlateLocSide IS NOT NULL
+                                  AND PlateLocHeight IS NOT NULL
+                                  AND ZoneSpeed IS NOT NULL"
+                               )
                   )
     )
   }
@@ -212,13 +222,16 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool) {
     df <- queryDB(conn, 
                   gsub(pattern = "_",
                        replacement = pitcher,
-                       x = "SELECT PlateLocSide, PlateLocHeight, 
-                                   TaggedPitchType, Tilt, ZoneSpeed
-                           FROM TestData
-                           WHERE Pitcher = '_'
-                           AND PlateLocSide IS NOT NULL
-                           AND PlateLocHeight IS NOT NULL
-                           AND ZoneSpeed IS NOT NULL"
+                       x = gsub(pattern = '--', replacement = sessionDate,
+                               x = "SELECT PlateLocSide, PlateLocHeight, 
+                                           TaggedPitchType, Tilt, ZoneSpeed
+                                   FROM TestData
+                                  WHERE Pitcher = '_'
+                                  AND Date = '--'
+                                  AND PlateLocSide IS NOT NULL
+                                  AND PlateLocHeight IS NOT NULL
+                                  AND ZoneSpeed IS NOT NULL"
+                               )
                   )
     )
   }
@@ -290,7 +303,7 @@ ui <- dashboardPage(
             offset = 0,
             
             h3("Session Date"),
-            selectizeInput(inputId = "sessionSelect",
+            selectInput(inputId = "sessionSelect",
                            label = NULL,
                            choices = NULL)
           ),
@@ -311,7 +324,7 @@ ui <- dashboardPage(
         
         fluidRow(
           box(title = "Previous Notes",
-              width = 7,
+              width = 6,
               div(style = "display:inline-block",
                   textInput(inputId = "notesInput", 
                             label = "Enter Note Here")),
@@ -322,7 +335,7 @@ ui <- dashboardPage(
               
           ),
           box(title = "Summary Statistics", 
-              width = 5,
+              width = 6,
               dataTableOutput(outputId = "summStatsDisplay")
           )
         ),
@@ -365,29 +378,32 @@ server <- function(input, output, session) {
                {
                  flags$ps <- input$playerSelect
                  
-                 updateSelectizeInput(session = session,
-                                      inputId = "sessionSelect",
-                                      # QUERY: For a pitcher, obtain
-                                      #        all dates of prev. sessions.
-                                      choices = obtainSession(flags$ps)
+                 updateSelectInput(session = session,
+                                   inputId = "sessionSelect",
+                                   # QUERY: For a pitcher, obtain
+                                   #        all dates of prev. sessions.
+                                   choices = obtainSession(flags$ps)
                  )
-                 
-                 flags$ss <- input$sessionSelect
-                 
                }
   )
+  
+  observeEvent(input$sessionSelect, 
+               {
+                 flags$ss <- input$sessionSelect
+               }
+               )
   
   observeEvent(input$warmupSelect || input$liveSelect, 
                output$szDisplay <- renderPlotly(
                  expr = {
                    if (input$warmupSelect && input$liveSelect) {
-                     locationDist(T, T, flags$ps, T)
+                     locationDist(T, T, flags$ps, T, flags$ss)
                    }
                    else if (input$liveSelect && !(input$warmupSelect)) {
-                     locationDist(F, T, flags$ps, T)
+                     locationDist(F, T, flags$ps, T, flags$ss)
                    }
                    else {
-                     locationDist(T, F, flags$ps, T)
+                     locationDist(T, F, flags$ps, T, flags$ss)
                    }
                  }
                )
@@ -427,7 +443,7 @@ server <- function(input, output, session) {
       # If the UI seems to throw an error... don't know why. It works nonetheless!
       
       # QUERY: Get the summary statistics (pitch, percent thrown, velo, spin).
-      summaryStats(flags$ps)
+      summaryStats(flags$ps, flags$ss)
     }
   )
   
@@ -452,6 +468,29 @@ addData(conn, "TestData.csv", "TestData")
 
 # DO NOT CHANGE THIS LINE :)
 invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date text, Note text)"))
+
+# Any "errors" that appear are parts of the code not yet running in tandem.
+# They should fix themselves (nothing has persisted thus far).
 shinyApp(ui, server)
 ```
+
+
+```{r}
+# Finish this :)
+queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, ZoneSpeed, SpinRate,
+                       TaggedPitchType
+                       FROM TestData 
+                      WHERE Pitcher = '", pitcher, 
+                     "' AND Date = '", sessionDate, "'", 
+                        "AND TaggedPitchType != 'Warmup'
+                         AND ZoneSpeed IS NOT NULL 
+                         AND SpinRate IS NOT NULL",
+                    sep = ""))
+```
+
+
+```{r}
+
+```
+
 
