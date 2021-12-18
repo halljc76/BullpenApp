@@ -3,8 +3,6 @@ title: "BullpenApp Project Script"
 author: "Carter Hall"
 ---
 
-**BullpenApp Project Script** 
-Carter Hall 
 Email: *halljc76@live.unc.edu*
 
 ```{r Libraries, message = FALSE, warning = FALSE}

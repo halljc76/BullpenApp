@@ -13,6 +13,8 @@ reflect on their game preparations.
 - Summary Statistics 
 - Velocity, Spin vs. Time Graphs
 - Notes Display and Interactive Input
+- Release Point Graphs (to-come)
+- Session-vs.-Session Comparison (to-come)
 
 ### Disclaimer
 When booting the application up, it may seem to err at the start.
