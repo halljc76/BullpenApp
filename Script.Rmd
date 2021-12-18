@@ -1,29 +1,11 @@
 ---
 title: "BullpenApp Project Script"
+author: "Carter Hall"
 ---
 
 **BullpenApp Project Script** 
 Carter Hall 
-
-*Ideas* 
-- Homepage 
-- Welcome Message :)
-- Basic Stats for Most Recent Session
-(Pie Chart of Pitch Types, Session History, Max Velo, Max RPM, Recent Notes)
-
-- Option Tab
-- Checkboxes Here, Menus Here
-
-- Pitch Plot for Session (Location, SZ)
-- CheckboxGroup for Session Date(s)
-- CheckboxGroup for Warmup/Live (Live standard opt.)
-- SZ Toggle
-- Baseball Image Toggle???
-
-- Line Graph (Check Consistency, Duration of Sustaining XX mph Velo, XXXX RPMs, etc.)
-- Use CG for Session Date(s)
-- Dropdown to Specify Metric(s)
-- Limit 2-3? Use 320 Stuff to Section Graph (GGPlot... Future Conversion to Plotly? )
+Email: *halljc76@live.unc.edu*
 
 ```{r Libraries, message = FALSE, warning = FALSE}
 options(shiny.maxRequestSize = 50*1024^2)
@@ -266,6 +248,127 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
   
   return(df)
 }
+
+spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloFlag) {
+  
+  print(pitcher)
+  
+  if (!warmupFlag && liveFlag) {
+    pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
+               WHERE Pitcher = '", pitcher , "' AND TaggedPitchType != 'Warmup'
+               AND Date = '", sessionDate, "'", sep = "")))
+    df <- data.frame()
+
+    for (pt in unname(pts)[[1]]) {
+      # Finish this :)
+      temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
+                                  ZoneSpeed, SpinRate
+                             FROM TestData 
+                            WHERE Pitcher = '", pitcher, 
+                           "' AND Date = '", sessionDate, "'", 
+                              "AND TaggedPitchType = '", pt, "'",
+                              "AND TaggedPitchType != 'Warmup'
+                               AND ZoneSpeed IS NOT NULL 
+                               AND SpinRate IS NOT NULL",
+                          sep = ""))
+      
+      df <- rbind(df, temp)
+      
+    }
+  }
+  
+  else if (!liveFlag && warmupFlag) {
+    pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
+               WHERE Pitcher = '", pitcher , "' AND TaggedPitchType != 'Live'", sep = "")))
+    df <- data.frame()
+    
+    
+    for (pt in unname(pts)[[1]]) {
+      # Finish this :)
+      temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
+                                  ZoneSpeed, SpinRate
+                             FROM TestData 
+                            WHERE Pitcher = '", pitcher, 
+                           "' AND Date = '", sessionDate, "'", 
+                              "AND TaggedPitchType = '", pt, "'",
+                              "AND TaggedPitchType != 'Live'
+                               AND ZoneSpeed IS NOT NULL 
+                               AND SpinRate IS NOT NULL",
+                          sep = ""))
+      
+      df <- rbind(df, temp)
+      
+    }
+  }
+  
+  else {
+    pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
+               WHERE Pitcher = '", pitcher, "'", sep = "")))
+    df <- data.frame()
+    
+    for (pt in unname(pts)[[1]]) {
+      print(pt)
+      # Finish this :)
+      temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
+                                  ZoneSpeed, SpinRate
+                             FROM TestData 
+                            WHERE Pitcher = '", pitcher, 
+                           "' AND Date = '", sessionDate, "'", 
+                              "AND TaggedPitchType = '", pt, "'",
+                              "AND ZoneSpeed IS NOT NULL 
+                               AND SpinRate IS NOT NULL",
+                          sep = ""))
+      
+      df <- rbind(df, temp)
+      
+    } 
+  }
+  
+  if (spinVeloFlag) {
+    return(
+          plot_ly(data = df %>% group_by(df$TaggedPitchType),
+                  x = ~df$Row, 
+                  y = ~df$ZoneSpeed, 
+                  type = "scatter",
+                  color = ~df$TaggedPitchType,
+                  mode = "lines+markers",
+                  hoverinfo = "text",
+                  text = ~paste(df$Row, ": ", round(df$ZoneSpeed, 1), " MPH", 
+                                sep = "")) %>% 
+                  layout(xaxis = list(            
+                         tickvals = ~df$Row,
+                         tickangle = 0,
+                         title = "Pitch #"),
+                         
+                         yaxis = (
+                           list(title = "Velo (MPH)")
+                           )
+                         )
+          )
+  }
+  else {
+    return(
+      plot_ly(data = df %>% group_by(df$TaggedPitchType),
+              x = ~df$Row, 
+              y = ~df$SpinRate, 
+              type = "scatter",
+              color = ~df$TaggedPitchType,
+              mode = "lines+markers",
+              hoverinfo = "text",
+              text = ~paste(df$Row, ": ", round(df$SpinRate, 0), " RPM", 
+                            sep = "")) %>% 
+              layout(xaxis = list(            
+                     tickvals = ~df$Row,
+                     tickangle = 0,
+                     title = "Pitch #"),
+                     
+                     yaxis = list(
+                       title = "Spin (RPM)"
+                       )
+                     )
+      )
+  }
+}
 ```
 
 ```{r UI}
@@ -345,10 +448,11 @@ ui <- dashboardPage(
           # Graph pitches by location
           # Table of most-often tilts
           
-          box(title = "Strikezone Plot (Blue Rect.)",
+          box(title = "Strikezone Plot (Hover to See Speed and Tilt)",
               plotlyOutput(outputId = "szDisplay")),
-          box(title = "Velo & Spin Graphs")
-          
+          box(title = "Velo & Spin Graphs",
+              plotlyOutput(outputId = "veloDisplay", height = "200px"),
+              plotlyOutput(outputId = "spinDisplay", height = "200px"))
         )
       )
     )
@@ -394,6 +498,7 @@ server <- function(input, output, session) {
                )
   
   observeEvent(input$warmupSelect || input$liveSelect, 
+               {
                output$szDisplay <- renderPlotly(
                  expr = {
                    if (input$warmupSelect && input$liveSelect) {
@@ -407,6 +512,21 @@ server <- function(input, output, session) {
                    }
                  }
                )
+               
+               output$veloDisplay <- renderPlotly(
+                 expr = {
+                   spinVeloGraphs(input$warmupSelect, input$liveSelect, 
+                                  input$playerSelect, input$sessionSelect, T)
+                 }
+               )
+               
+               output$spinDisplay <- renderPlotly(
+                 expr = {
+                   spinVeloGraphs(input$warmupSelect, input$liveSelect, 
+                                  input$playerSelect, input$sessionSelect, F)
+                 }
+               )
+               }
   )
   
   output$notesDisplay <- renderDataTable(
@@ -469,28 +589,19 @@ addData(conn, "TestData.csv", "TestData")
 # DO NOT CHANGE THIS LINE :)
 invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date text, Note text)"))
 
-# Any "errors" that appear are parts of the code not yet running in tandem.
-# They should fix themselves (nothing has persisted thus far).
+## IMPORTANT ##
+# Sometimes, the app throws error messages on-startup. 
+# This is, to the best of my knowledge, simply because some things take awhile
+# to execute in comparison. 
+
+# The code SHOULD function (startup time probably around 5 seconds... but
+# I doubt this would be too much of an issue as it isn't the homepage of the app,
+# and anything could run before someone gets to it.)
+
+# Do, however, let anyone using this know that if it complains, it's not them!
+###############
 shinyApp(ui, server)
 ```
 
-
-```{r}
-# Finish this :)
-queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, ZoneSpeed, SpinRate,
-                       TaggedPitchType
-                       FROM TestData 
-                      WHERE Pitcher = '", pitcher, 
-                     "' AND Date = '", sessionDate, "'", 
-                        "AND TaggedPitchType != 'Warmup'
-                         AND ZoneSpeed IS NOT NULL 
-                         AND SpinRate IS NOT NULL",
-                    sep = ""))
-```
-
-
-```{r}
-
-```
 
 
