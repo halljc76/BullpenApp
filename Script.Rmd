@@ -589,7 +589,7 @@ server <- function(input, output, session) {
 conn <- dbConnect(RSQLite::SQLite(), "bullpen.sqlite")
 
 # Make SURE the final param in this call matches the 
-# corresponding name given to the server-side queries!!!
+# corresponding name given to the server-side queries!!!!
 addData(conn, "TestData.csv", "TestData")
 
 # DO NOT CHANGE THIS LINE :)

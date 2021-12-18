@@ -25,6 +25,7 @@ Hopefully it isn't a file issue... we'll see how that goes.
 to each query, systematically.
 
 ### Related Files
+
 This repo has the following files of importance:
 - *Script.Rmd*: The code. (The comments should help make sense of it.)
 - *TestData.csv*: The sample session. (Change this in the main chunk when implemented!)
