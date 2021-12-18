@@ -105,6 +105,7 @@ summaryStats <- function(pitcher, sessionDate) {
           query = gsub(pattern = '_', replacement = pt,
                        x = gsub(pattern = '--',replacement = pitcher,
                                 x = gsub(pattern = '---', replacement = sessionDate,
+                                         # Query: Find the number of pitches thrown.
                                          x = "SELECT COUNT(*) 
                                                FROM TestData
                                               WHERE TaggedPitchType = '_'
@@ -119,6 +120,7 @@ summaryStats <- function(pitcher, sessionDate) {
           query = gsub(pattern = '_', replacement = pt,
                        x = gsub(pattern = '--',replacement = pitcher,
                                 x = gsub(pattern = '---', replacement = sessionDate,
+                                         # QUERY: Find avg. speed of each pitch type.
                                          x = "SELECT AVG(ZoneSpeed)
                                                FROM TestData
                                               WHERE TaggedPitchType = '_'
@@ -134,6 +136,7 @@ summaryStats <- function(pitcher, sessionDate) {
           query = gsub(pattern = '_', replacement = pt,
                        x = gsub(pattern = '--',replacement = pitcher,
                                 x = gsub(pattern = '---', replacement = sessionDate,
+                                         # QUERY: Find avg. spin of each pitch type.
                                          x = "SELECT AVG(SpinRate)
                                                FROM TestData
                                               WHERE TaggedPitchType = '_'
@@ -185,6 +188,7 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
                   gsub(pattern = "_",
                        replacement = pitcher,
                        x = gsub(pattern = '--', replacement = sessionDate,
+                                # QUERY: Get Location, Type, Tilt, and Velo.
                                x = "SELECT PlateLocSide, PlateLocHeight, 
                                            TaggedPitchType, Tilt, ZoneSpeed
                                    FROM TestData
@@ -205,6 +209,7 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
                   gsub(pattern = "_",
                        replacement = pitcher,
                        x = gsub(pattern = '--', replacement = sessionDate,
+                                # QUERY: Same as above.
                                x = "SELECT PlateLocSide, PlateLocHeight, 
                                            TaggedPitchType, Tilt, ZoneSpeed
                                    FROM TestData
@@ -254,13 +259,14 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
   print(pitcher)
   
   if (!warmupFlag && liveFlag) {
+    # QUERY: Get the distinct pitch types thrown.
     pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
                WHERE Pitcher = '", pitcher , "' AND TaggedPitchType != 'Warmup'
                AND Date = '", sessionDate, "'", sep = "")))
     df <- data.frame()
 
     for (pt in unname(pts)[[1]]) {
-      # Finish this :)
+      # QUERY: Same as below. (Line 293)
       temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
                                   ZoneSpeed, SpinRate
                              FROM TestData 
@@ -284,7 +290,7 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
     
     
     for (pt in unname(pts)[[1]]) {
-      # Finish this :)
+      # QUERY: Get the row index, pitch type, velo, and spin.
       temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
                                   ZoneSpeed, SpinRate
                              FROM TestData 
@@ -308,7 +314,7 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
     
     for (pt in unname(pts)[[1]]) {
       print(pt)
-      # Finish this :)
+      
       temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
                                   ZoneSpeed, SpinRate
                              FROM TestData 
