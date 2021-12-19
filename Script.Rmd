@@ -664,8 +664,3 @@ invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date te
 shinyApp(ui, server)
 ```
 
-```{r}
-?actionButton
-```
-
-
