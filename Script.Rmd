@@ -90,7 +90,7 @@ getDate <- function() {
 summaryStats <- function(pitcher, sessionDate) {
   df <- locationDist(F, T, pitcher, F, sessionDate)
   tot <- 0
-  pct <- c()
+  cts <- c()
   names <- c()
   avgVelos <- c()
   avgSpins <- c()
@@ -144,17 +144,16 @@ summaryStats <- function(pitcher, sessionDate) {
                                                 AND SpinRate IS NOT NULL")))))[[1]])
     
     tot = tot + ct
-    pct[i] <- ct
+    cts[i] <- ct
     names[i] <- pt
     avgVelos[i] <- round(avgVelo, digit = 2)
     avgSpins[i] <- round(avgSpin, digit = 0)
     i = i + 1
   }
   
-  pct <- round(pct / tot, digit = 2) * 100
-  ret <- data.frame(pitches = names, percents = pct, 
+  ret <- data.frame(pitches = names, counts = cts, 
                     avgVelos = avgVelos, avgSpins = avgSpins)
-    colnames(ret) <- c("Pitch", "% Thrown", "Avg. Velo", "Avg. Spin")
+    colnames(ret) <- c("Pitch", "Num. Thrown", "Avg. Velo", "Avg. Spin")
   return(ret)
 }
 
@@ -253,9 +252,6 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
 }
 
 spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloFlag) {
-  
-  print(pitcher)
-  
   if (!warmupFlag && liveFlag) {
     # QUERY: Get the distinct pitch types thrown.
     pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
@@ -373,6 +369,54 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
       )
   }
 }
+
+releasePoints <- function(warmupFlag, liveFlag, pitcher, sessionDate) {
+  if (warmupFlag == liveFlag) {
+    df <- queryDB(conn, 
+            paste("SELECT RelSide, RelHeight, 
+                          PlateLocSide, PlateLocHeight,
+                          ZoneSpeed, SpinRate, TaggedPitchType 
+                    FROM TestData 
+                    WHERE Pitcher = '", pitcher, "'",
+                  "\n AND Date = '", sessionDate, "'", sep = ""))
+  } else if (!warmupFlag && liveFlag) {
+    df <- queryDB(conn, 
+            paste("SELECT RelSide, RelHeight, 
+                          PlateLocSide, PlateLocHeight,
+                          ZoneSpeed, SpinRate, TaggedPitchType 
+                    FROM TestData 
+                    WHERE Pitcher = '", pitcher, "'",
+                  " AND Date = '", sessionDate, "'",
+                  " AND TaggedPitchType != 'Warmup'", sep = ""))
+  } else {
+      df <- queryDB(conn, 
+            paste("SELECT RelSide, RelHeight, 
+                          PlateLocSide, PlateLocHeight,
+                          ZoneSpeed, SpinRate, TaggedPitchType 
+                    FROM TestData 
+                    WHERE Pitcher = '", pitcher, "'",
+                  " AND Date = '", sessionDate, "'",
+                  " AND TaggedPitchType != 'Live'", sep = ""))
+  }
+  
+  df <- na.omit(df)
+  df$sz <- ifelse(abs(df$PlateLocSide) <= 0.78333, 
+            ifelse(df$PlateLocHeight >= 1.515, 
+              ifelse(df$PlateLocHeight <= 3.316, T, F), F), F)
+  
+  plot_ly(data = df, 
+          x = ~df$RelSide,
+          y = ~df$RelHeight, 
+          type = "scatter", 
+          mode = "markers", 
+          color = ~df$TaggedPitchType,
+          hoverinfo = "text",
+          text = ~paste(round(ZoneSpeed, 1), " MPH\n", round(SpinRate, 0), " RPM\n",
+                        ifelse(sz, "Strike", "Ball"))
+          ) %>% 
+    layout(xaxis = list(title = "Distance from Center of Rubber (ft)"),
+           yaxis = list(title = "Height above Home Plate (ft)")) 
+}
 ```
 
 ```{r UI}
@@ -429,34 +473,40 @@ ui <- dashboardPage(
           )
         ),
         
-        fluidRow(
-          box(title = "Previous Notes",
-              width = 6,
-              div(style = "display:inline-block",
-                  textInput(inputId = "notesInput", 
-                            label = "Enter Note Here")),
-              div(style = "display:inline-block",
-                  actionButton(inputId = "notesSubmit", 
-                               label = "Add Note")),
-              dataTableOutput(outputId = "notesDisplay"),
-              
-          ),
-          box(title = "Summary Statistics", 
-              width = 6,
-              dataTableOutput(outputId = "summStatsDisplay")
-          )
-        ),
         
         fluidRow(
           
           # Graph pitches by location
           # Table of most-often tilts
           
-          box(title = "Strikezone Plot (Hover to See Speed and Tilt)",
+          box(title = "Strikezone Plot (Pitcher's Perspective)",
               plotlyOutput(outputId = "szDisplay")),
           box(title = "Velo & Spin Graphs",
               plotlyOutput(outputId = "veloDisplay", height = "200px"),
               plotlyOutput(outputId = "spinDisplay", height = "200px"))
+        ),
+        
+        fluidRow(
+          box(title = "Release Points (Pitcher's Perspective)",
+              width = 6,
+              plotlyOutput(outputId = "relDisplay")
+              ),
+          
+          box(title = "Summary & Notes",
+              width = 6,
+              dataTableOutput(outputId = "summStatsDisplay"),
+              hr(style = "border-top: 1px solid #000000;"),
+              
+              div(style = "display:inline-block",
+                  textInput(inputId = "notesInput", 
+                            label = "Enter Note Here")),
+              div(style = "display:inline-block",
+                  actionButton(inputId = "notesSubmit", 
+                               label = "Add Note",
+                               class = "btn-success")),
+              dataTableOutput(outputId = "notesDisplay"),
+              
+          )
         )
       )
     )
@@ -530,6 +580,13 @@ server <- function(input, output, session) {
                                   input$playerSelect, input$sessionSelect, F)
                  }
                )
+               
+               output$relDisplay <- renderPlotly(
+                 expr = {
+                   releasePoints(input$warmupSelect, input$liveSelect, 
+                                  input$playerSelect, input$sessionSelect)
+                 }
+               )
                }
   )
   
@@ -596,7 +653,7 @@ invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date te
 ## IMPORTANT ##
 # Sometimes, the app throws error messages on-startup. 
 # This is, to the best of my knowledge, simply because some things take awhile
-# to execute in comparison. 
+# to execute. 
 
 # The code SHOULD function (startup time probably around 5 seconds... but
 # I doubt this would be too much of an issue as it isn't the homepage of the app,
@@ -607,5 +664,8 @@ invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date te
 shinyApp(ui, server)
 ```
 
+```{r}
+?actionButton
+```
 
 

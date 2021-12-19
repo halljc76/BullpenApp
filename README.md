@@ -13,7 +13,7 @@ reflect on their game preparations.
 - Summary Statistics 
 - Velocity, Spin vs. Time Graphs
 - Notes Display and Interactive Input
-- Release Point Graphs (to-come)
+- Release Point Graphs 
 - Session-vs.-Session Comparison (to-come)
 
 ### Disclaimer
