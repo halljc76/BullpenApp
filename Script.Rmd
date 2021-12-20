@@ -88,72 +88,17 @@ getDate <- function() {
 
 
 summaryStats <- function(pitcher, sessionDate) {
-  df <- locationDist(F, T, pitcher, F, sessionDate)
-  tot <- 0
-  cts <- c()
-  names <- c()
-  avgVelos <- c()
-  avgSpins <- c()
-  i = 1
-  for (pt in unique(df$TaggedPitchType)) {
-    ct <- unname(
-      as.list(
-        queryDB(
-          conn, 
-          query = gsub(pattern = '_', replacement = pt,
-                       x = gsub(pattern = '--',replacement = pitcher,
-                                x = gsub(pattern = '---', replacement = sessionDate,
-                                         # Query: Find the number of pitches thrown.
-                                         x = "SELECT COUNT(*) 
-                                               FROM TestData
-                                              WHERE TaggedPitchType = '_'
-                                                AND TaggedPitchType != 'Warmup'
-                                                AND Pitcher = '--'
-                                                AND Date = '---'")))))[[1]])
-    
-    avgVelo <- unname(
-      as.list(
-        queryDB(
-          conn, 
-          query = gsub(pattern = '_', replacement = pt,
-                       x = gsub(pattern = '--',replacement = pitcher,
-                                x = gsub(pattern = '---', replacement = sessionDate,
-                                         # QUERY: Find avg. speed of each pitch type.
-                                         x = "SELECT AVG(ZoneSpeed)
-                                               FROM TestData
-                                              WHERE TaggedPitchType = '_'
-                                                AND TaggedPitchType != 'Warmup'
-                                                AND Pitcher = '--'
-                                                AND Date = '---'
-                                                AND ZoneSpeed IS NOT NULL")))))[[1]])
-    
-    avgSpin <- unname(
-      as.list(
-        queryDB(
-          conn, 
-          query = gsub(pattern = '_', replacement = pt,
-                       x = gsub(pattern = '--',replacement = pitcher,
-                                x = gsub(pattern = '---', replacement = sessionDate,
-                                         # QUERY: Find avg. spin of each pitch type.
-                                         x = "SELECT AVG(SpinRate)
-                                               FROM TestData
-                                              WHERE TaggedPitchType = '_'
-                                                AND TaggedPitchType != 'Warmup'
-                                                AND Pitcher = '--'
-                                                AND Date = '---'
-                                                AND SpinRate IS NOT NULL")))))[[1]])
-    
-    tot = tot + ct
-    cts[i] <- ct
-    names[i] <- pt
-    avgVelos[i] <- round(avgVelo, digit = 2)
-    avgSpins[i] <- round(avgSpin, digit = 0)
-    i = i + 1
-  }
   
-  ret <- data.frame(pitches = names, counts = cts, 
-                    avgVelos = avgVelos, avgSpins = avgSpins)
-    colnames(ret) <- c("Pitch", "Num. Thrown", "Avg. Velo", "Avg. Spin")
+  ret <- queryDB(conn, 
+        paste("SELECT TaggedPitchType AS Pitch, COUNT(TaggedPitchType) AS `Num. Thrown`, 
+        ROUND(AVG(ZoneSpeed), 1) AS `Avg. Velo`, ROUND(AVG(SpinRate), 0) AS `Avg. Spin`
+        FROM TestData 
+        WHERE Pitcher = '", pitcher, "' 
+        AND Date = '", sessionDate, "'
+        GROUP BY TaggedPitchType
+        ORDER BY `Num. Thrown` DESC", sep = "")
+        )
+  ret <- subset(ret, ret$Pitch != 'Warmup')
   return(ret)
 }
 
@@ -161,64 +106,20 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
   
   # QUERY: All queries in this function select (y,z) and pitch type.
   
+  df <- queryDB(conn, 
+                paste("SELECT PlateLocSide, PlateLocHeight, TaggedPitchType,
+                Tilt, ZoneSpeed FROM TestData
+                WHERE Pitcher = '", pitcher, "' 
+                AND Date = '", sessionDate, "'", sep = ""))
+  df <- na.omit(df)
+  
   if (warmupFlag == TRUE && liveFlag == FALSE) {
-    df <- queryDB(conn, 
-                  gsub(pattern = "_",
-                       replacement = pitcher,
-                       x = gsub(pattern = '--', replacement = sessionDate,
-                               x = "SELECT PlateLocSide, PlateLocHeight, 
-                                           TaggedPitchType, Tilt, ZoneSpeed
-                                   FROM TestData
-                                  WHERE PitchSession != 'Live'
-                                  AND Pitcher = '_'
-                                  AND Date = '--'
-                                  AND PlateLocSide IS NOT NULL
-                                  AND PlateLocHeight IS NOT NULL
-                                  AND ZoneSpeed IS NOT NULL"
-                               )
-                  )
-    )
-  }
+    df <- subset(df, df$TaggedPitchType == 'Warmup')
+  } 
   
   if (warmupFlag == FALSE && liveFlag == TRUE) {
-    df <- queryDB(conn, 
-                  gsub(pattern = "_",
-                       replacement = pitcher,
-                       x = gsub(pattern = '--', replacement = sessionDate,
-                                # QUERY: Get Location, Type, Tilt, and Velo.
-                               x = "SELECT PlateLocSide, PlateLocHeight, 
-                                           TaggedPitchType, Tilt, ZoneSpeed
-                                   FROM TestData
-                                  WHERE PitchSession != 'Warmup'
-                                  AND Pitcher = '_'
-                                  AND Date = '--'
-                                  AND PlateLocSide IS NOT NULL
-                                  AND PlateLocHeight IS NOT NULL
-                                  AND ZoneSpeed IS NOT NULL"
-                               )
-                  )
-    )
-  }
-  
-  # If both or neither are selected, just plot everything.
-  if (warmupFlag == liveFlag) {
-    df <- queryDB(conn, 
-                  gsub(pattern = "_",
-                       replacement = pitcher,
-                       x = gsub(pattern = '--', replacement = sessionDate,
-                                # QUERY: Same as above.
-                               x = "SELECT PlateLocSide, PlateLocHeight, 
-                                           TaggedPitchType, Tilt, ZoneSpeed
-                                   FROM TestData
-                                  WHERE Pitcher = '_'
-                                  AND Date = '--'
-                                  AND PlateLocSide IS NOT NULL
-                                  AND PlateLocHeight IS NOT NULL
-                                  AND ZoneSpeed IS NOT NULL"
-                               )
-                  )
-    )
-  }
+    df <- subset(df, df$TaggedPitchType != 'Warmup')
+  } 
   
   if (plotBool){
     fig <- suppressMessages(
@@ -252,78 +153,22 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
 }
 
 spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloFlag) {
+  
+  df <- queryDB(conn, 
+        paste("SELECT ROW_NUMBER() OVER(PARTITION BY TaggedPitchType) AS Row, 
+               TaggedPitchType, ZoneSpeed, SpinRate
+           FROM TestData WHERE Pitcher =  '", pitcher, "' 
+           AND Date = '", sessionDate, "'
+           AND ZoneSpeed IS NOT NULL 
+           AND SpinRate IS NOT NULL", sep = ""))
+  df <- na.omit(df)
+  
   if (!warmupFlag && liveFlag) {
-    # QUERY: Get the distinct pitch types thrown.
-    pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
-               WHERE Pitcher = '", pitcher , "' AND TaggedPitchType != 'Warmup'
-               AND Date = '", sessionDate, "'", sep = "")))
-    df <- data.frame()
+    df <- subset(df, df$TaggedPitchType != 'Warmup')
+  } else if (!liveFlag && warmupFlag) {
+    df <- subset(df, df$TaggedPitchType == 'Warmup')
+    }
 
-    for (pt in unname(pts)[[1]]) {
-      # QUERY: Same as below. (Line 293)
-      temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
-                                  ZoneSpeed, SpinRate
-                             FROM TestData 
-                            WHERE Pitcher = '", pitcher, 
-                           "' AND Date = '", sessionDate, "'", 
-                              "AND TaggedPitchType = '", pt, "'",
-                              "AND TaggedPitchType != 'Warmup'
-                               AND ZoneSpeed IS NOT NULL 
-                               AND SpinRate IS NOT NULL",
-                          sep = ""))
-      
-      df <- rbind(df, temp)
-      
-    }
-  }
-  
-  else if (!liveFlag && warmupFlag) {
-    pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
-               WHERE Pitcher = '", pitcher , "' AND TaggedPitchType != 'Live'", sep = "")))
-    df <- data.frame()
-    
-    
-    for (pt in unname(pts)[[1]]) {
-      # QUERY: Get the row index, pitch type, velo, and spin.
-      temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
-                                  ZoneSpeed, SpinRate
-                             FROM TestData 
-                            WHERE Pitcher = '", pitcher, 
-                           "' AND Date = '", sessionDate, "'", 
-                              "AND TaggedPitchType = '", pt, "'",
-                              "AND TaggedPitchType != 'Live'
-                               AND ZoneSpeed IS NOT NULL 
-                               AND SpinRate IS NOT NULL",
-                          sep = ""))
-      
-      df <- rbind(df, temp)
-      
-    }
-  }
-  
-  else {
-    pts <- as.list(queryDB(conn, paste("SELECT DISTINCT TaggedPitchType FROM TestData 
-               WHERE Pitcher = '", pitcher, "'", sep = "")))
-    df <- data.frame()
-    
-    for (pt in unname(pts)[[1]]) {
-      print(pt)
-      
-      temp <- queryDB(conn, paste("SELECT ROW_NUMBER() OVER() AS Row, TaggedPitchType,
-                                  ZoneSpeed, SpinRate
-                             FROM TestData 
-                            WHERE Pitcher = '", pitcher, 
-                           "' AND Date = '", sessionDate, "'", 
-                              "AND TaggedPitchType = '", pt, "'",
-                              "AND ZoneSpeed IS NOT NULL 
-                               AND SpinRate IS NOT NULL",
-                          sep = ""))
-      
-      df <- rbind(df, temp)
-      
-    } 
-  }
-  
   if (spinVeloFlag) {
     return(
           plot_ly(data = df %>% group_by(df$TaggedPitchType),
@@ -345,8 +190,7 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
                            )
                          )
           )
-  }
-  else {
+  } else {
     return(
       plot_ly(data = df %>% group_by(df$TaggedPitchType),
               x = ~df$Row, 
@@ -371,32 +215,16 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
 }
 
 releasePoints <- function(warmupFlag, liveFlag, pitcher, sessionDate) {
-  if (warmupFlag == liveFlag) {
-    df <- queryDB(conn, 
-            paste("SELECT RelSide, RelHeight, 
-                          PlateLocSide, PlateLocHeight,
-                          ZoneSpeed, SpinRate, TaggedPitchType 
-                    FROM TestData 
-                    WHERE Pitcher = '", pitcher, "'",
-                  "\n AND Date = '", sessionDate, "'", sep = ""))
-  } else if (!warmupFlag && liveFlag) {
-    df <- queryDB(conn, 
-            paste("SELECT RelSide, RelHeight, 
-                          PlateLocSide, PlateLocHeight,
-                          ZoneSpeed, SpinRate, TaggedPitchType 
-                    FROM TestData 
-                    WHERE Pitcher = '", pitcher, "'",
-                  " AND Date = '", sessionDate, "'",
-                  " AND TaggedPitchType != 'Warmup'", sep = ""))
-  } else {
-      df <- queryDB(conn, 
-            paste("SELECT RelSide, RelHeight, 
-                          PlateLocSide, PlateLocHeight,
-                          ZoneSpeed, SpinRate, TaggedPitchType 
-                    FROM TestData 
-                    WHERE Pitcher = '", pitcher, "'",
-                  " AND Date = '", sessionDate, "'",
-                  " AND TaggedPitchType != 'Live'", sep = ""))
+  df <- queryDB(conn, 
+          paste("SELECT RelSide, RelHeight, 
+                        PlateLocSide, PlateLocHeight,
+                        ZoneSpeed, SpinRate, TaggedPitchType 
+                  FROM TestData 
+                  WHERE Pitcher = '", pitcher, "'",
+                "\n AND Date = '", sessionDate, "'", sep = ""))
+  
+  if (!warmupFlag && liveFlag) {
+    df <- subset(df, df$TaggedPitchType != "Warmup")
   }
   
   df <- na.omit(df)
@@ -425,9 +253,12 @@ ui <- dashboardPage(
   header = dashboardHeader(),
   sidebar = dashboardSidebar(
     sidebarMenu(
-      menuItem(text = "Start Here", 
-               tabName = "start",
-               icon = icon("home"))
+      menuItem(text = "Individual Session", 
+               tabName = "single",
+               icon = icon("calendar-day")),
+      menuItem(text = "Session-vs.-Session",
+               tabName = "multiple",
+               icon = icon("calendar-week"))
     )
   ),
   body = dashboardBody(
@@ -435,7 +266,7 @@ ui <- dashboardPage(
     tabItems(
       
       tabItem(
-        tabName = "start",
+        tabName = "single",
         
         fluidRow(
           column(
@@ -475,9 +306,6 @@ ui <- dashboardPage(
         
         
         fluidRow(
-          
-          # Graph pitches by location
-          # Table of most-often tilts
           
           box(title = "Strikezone Plot (Pitcher's Perspective)",
               plotlyOutput(outputId = "szDisplay")),
@@ -663,4 +491,5 @@ invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date te
 ###############
 shinyApp(ui, server)
 ```
+
 
