@@ -102,25 +102,19 @@ summaryStats <- function(pitcher, sessionDate) {
   return(ret)
 }
 
-locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
+locationDist <- function(pitcher, plotBool, sessionDate) {
   
   # QUERY: All queries in this function select (y,z) and pitch type.
   
   df <- queryDB(conn, 
-                paste("SELECT PlateLocSide, PlateLocHeight, TaggedPitchType,
+                paste("SELECT PlateLocSide, PlateLocHeight, 
+                TaggedPitchType,
                 Tilt, ZoneSpeed FROM TestData
                 WHERE Pitcher = '", pitcher, "' 
                 AND Date = '", sessionDate, "'", sep = ""))
   df <- na.omit(df)
-  
-  if (warmupFlag == TRUE && liveFlag == FALSE) {
-    df <- subset(df, df$TaggedPitchType == 'Warmup')
-  } 
-  
-  if (warmupFlag == FALSE && liveFlag == TRUE) {
-    df <- subset(df, df$TaggedPitchType != 'Warmup')
-  } 
-  
+  df <- subset(df, df$TaggedPitchType != 'Warmup')
+
   if (plotBool){
     fig <- suppressMessages(
       plot_ly(
@@ -152,23 +146,18 @@ locationDist <- function(warmupFlag, liveFlag, pitcher, plotBool, sessionDate) {
   return(df)
 }
 
-spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloFlag) {
+spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
   
   df <- queryDB(conn, 
-        paste("SELECT ROW_NUMBER() OVER(PARTITION BY TaggedPitchType) AS Row, 
-               TaggedPitchType, ZoneSpeed, SpinRate
+        paste("SELECT ROW_NUMBER() OVER(PARTITION BY TaggedPitchType) AS 
+               Row, TaggedPitchType, ZoneSpeed, SpinRate
            FROM TestData WHERE Pitcher =  '", pitcher, "' 
            AND Date = '", sessionDate, "'
            AND ZoneSpeed IS NOT NULL 
            AND SpinRate IS NOT NULL", sep = ""))
   df <- na.omit(df)
+  df <- subset(df, df$TaggedPitchType != 'Warmup')
   
-  if (!warmupFlag && liveFlag) {
-    df <- subset(df, df$TaggedPitchType != 'Warmup')
-  } else if (!liveFlag && warmupFlag) {
-    df <- subset(df, df$TaggedPitchType == 'Warmup')
-    }
-
   if (spinVeloFlag) {
     return(
           plot_ly(data = df %>% group_by(df$TaggedPitchType),
@@ -178,7 +167,8 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
                   color = ~df$TaggedPitchType,
                   mode = "lines+markers",
                   hoverinfo = "text",
-                  text = ~paste(df$Row, ": ", round(df$ZoneSpeed, 1), " MPH", 
+                  text = ~paste(df$Row, ": ", round(df$ZoneSpeed, 1), " 
+                                MPH", 
                                 sep = "")) %>% 
                   layout(xaxis = list(            
                          tickvals = ~df$Row,
@@ -214,7 +204,7 @@ spinVeloGraphs <- function(warmupFlag, liveFlag, pitcher, sessionDate, spinVeloF
   }
 }
 
-releasePoints <- function(warmupFlag, liveFlag, pitcher, sessionDate) {
+releasePoints <- function(pitcher, sessionDate) {
   df <- queryDB(conn, 
           paste("SELECT RelSide, RelHeight, 
                         PlateLocSide, PlateLocHeight,
@@ -223,11 +213,8 @@ releasePoints <- function(warmupFlag, liveFlag, pitcher, sessionDate) {
                   WHERE Pitcher = '", pitcher, "'",
                 "\n AND Date = '", sessionDate, "'", sep = ""))
   
-  if (!warmupFlag && liveFlag) {
-    df <- subset(df, df$TaggedPitchType != "Warmup")
-  }
-  
   df <- na.omit(df)
+  df <- subset(df, df$TaggedPitchType != "Warmup")
   df$sz <- ifelse(abs(df$PlateLocSide) <= 0.78333, 
             ifelse(df$PlateLocHeight >= 1.515, 
               ifelse(df$PlateLocHeight <= 3.316, T, F), F), F)
@@ -239,7 +226,8 @@ releasePoints <- function(warmupFlag, liveFlag, pitcher, sessionDate) {
           mode = "markers", 
           color = ~df$TaggedPitchType,
           hoverinfo = "text",
-          text = ~paste(round(ZoneSpeed, 1), " MPH\n", round(SpinRate, 0), " RPM\n",
+          text = ~paste(round(ZoneSpeed, 1), " MPH\n", 
+                        round(SpinRate, 0), " RPM\n",
                         ifelse(sz, "Strike", "Ball"))
           ) %>% 
     layout(xaxis = list(title = "Distance from Center of Rubber (ft)"),
@@ -288,19 +276,6 @@ ui <- dashboardPage(
             selectInput(inputId = "sessionSelect",
                            label = NULL,
                            choices = NULL)
-          ),
-          
-          column(
-            width = 2, 
-            offset = 0,
-            
-            h3("Warmup/Live/Both?"),
-            checkboxInput(inputId = "warmupSelect",
-                          label = "Warmup",
-                          value = FALSE),
-            checkboxInput(inputId = "liveSelect",
-                          label = "Live",
-                          value = TRUE)
           )
         ),
         
@@ -379,45 +354,33 @@ server <- function(input, output, session) {
                }
                )
   
-  observeEvent(input$warmupSelect || input$liveSelect, 
-               {
-               output$szDisplay <- renderPlotly(
+   output$szDisplay <- renderPlotly(
                  expr = {
-                   if (input$warmupSelect && input$liveSelect) {
-                     locationDist(T, T, flags$ps, T, flags$ss)
-                   }
-                   else if (input$liveSelect && !(input$warmupSelect)) {
-                     locationDist(F, T, flags$ps, T, flags$ss)
-                   }
-                   else {
-                     locationDist(T, F, flags$ps, T, flags$ss)
-                   }
+                   locationDist(flags$ps, T, flags$ss)
                  }
                )
                
-               output$veloDisplay <- renderPlotly(
-                 expr = {
-                   spinVeloGraphs(input$warmupSelect, input$liveSelect, 
-                                  input$playerSelect, input$sessionSelect, T)
-                 }
-               )
-               
-               output$spinDisplay <- renderPlotly(
-                 expr = {
-                   spinVeloGraphs(input$warmupSelect, input$liveSelect, 
-                                  input$playerSelect, input$sessionSelect, F)
-                 }
-               )
-               
-               output$relDisplay <- renderPlotly(
-                 expr = {
-                   releasePoints(input$warmupSelect, input$liveSelect, 
-                                  input$playerSelect, input$sessionSelect)
-                 }
-               )
-               }
-  )
-  
+   output$veloDisplay <- renderPlotly(
+     expr = {
+       spinVeloGraphs(input$playerSelect, 
+                      input$sessionSelect, T)
+     }
+   )
+   
+   output$spinDisplay <- renderPlotly(
+     expr = {
+       spinVeloGraphs(input$playerSelect, 
+                      input$sessionSelect, F)
+     }
+   )
+   
+   output$relDisplay <- renderPlotly(
+     expr = {
+       releasePoints(input$playerSelect, 
+                     input$sessionSelect)
+     }
+   )
+
   output$notesDisplay <- renderDataTable(
     expr = {
       # QUERY: Select all notes and dates for this pitcher.
