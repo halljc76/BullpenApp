@@ -5,6 +5,15 @@ author: "Carter Hall"
 
 Email: *halljc76@live.unc.edu*
 
+To-Do:
+- Change to SidebarLayout, Tabs for Each 'Box'
+- Compute average tilt (add to summ. stats)
+- Make Tilt UI 
+- Horiz., Vert. Break vs. Time, vs. Each Other  Graphs
+- Release point CLUSTER, averages, and outliers (HT)
+- Add Balls, Strikes to Summ. Stats?
+
+
 ```{r Libraries, message = FALSE, warning = FALSE}
 options(shiny.maxRequestSize = 50*1024^2)
 library(shiny)
@@ -90,14 +99,14 @@ getDate <- function() {
 summaryStats <- function(pitcher, sessionDate) {
   
   ret <- queryDB(conn, 
-        paste("SELECT TaggedPitchType AS Pitch, COUNT(TaggedPitchType) AS `Num. Thrown`, 
+                 paste("SELECT TaggedPitchType AS Pitch, COUNT(TaggedPitchType) AS `Num. Thrown`, 
         ROUND(AVG(ZoneSpeed), 1) AS `Avg. Velo`, ROUND(AVG(SpinRate), 0) AS `Avg. Spin`
         FROM TestData 
         WHERE Pitcher = '", pitcher, "' 
         AND Date = '", sessionDate, "'
         GROUP BY TaggedPitchType
         ORDER BY `Num. Thrown` DESC", sep = "")
-        )
+  )
   ret <- subset(ret, ret$Pitch != 'Warmup')
   return(ret)
 }
@@ -114,7 +123,7 @@ locationDist <- function(pitcher, plotBool, sessionDate) {
                 AND Date = '", sessionDate, "'", sep = ""))
   df <- na.omit(df)
   df <- subset(df, df$TaggedPitchType != 'Warmup')
-
+  
   if (plotBool){
     fig <- suppressMessages(
       plot_ly(
@@ -149,7 +158,7 @@ locationDist <- function(pitcher, plotBool, sessionDate) {
 spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
   
   df <- queryDB(conn, 
-        paste("SELECT ROW_NUMBER() OVER(PARTITION BY TaggedPitchType) AS 
+                paste("SELECT ROW_NUMBER() OVER(PARTITION BY TaggedPitchType) AS 
                Row, TaggedPitchType, ZoneSpeed, SpinRate
            FROM TestData WHERE Pitcher =  '", pitcher, "' 
            AND Date = '", sessionDate, "'
@@ -160,26 +169,26 @@ spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
   
   if (spinVeloFlag) {
     return(
-          plot_ly(data = df %>% group_by(df$TaggedPitchType),
-                  x = ~df$Row, 
-                  y = ~df$ZoneSpeed, 
-                  type = "scatter",
-                  color = ~df$TaggedPitchType,
-                  mode = "lines+markers",
-                  hoverinfo = "text",
-                  text = ~paste(df$Row, ": ", round(df$ZoneSpeed, 1), " 
+      plot_ly(data = df %>% group_by(df$TaggedPitchType),
+              x = ~df$Row, 
+              y = ~df$ZoneSpeed, 
+              type = "scatter",
+              color = ~df$TaggedPitchType,
+              mode = "lines+markers",
+              hoverinfo = "text",
+              text = ~paste(df$Row, ": ", round(df$ZoneSpeed, 1), " 
                                 MPH", 
-                                sep = "")) %>% 
-                  layout(xaxis = list(            
-                         tickvals = ~df$Row,
-                         tickangle = 0,
-                         title = "Pitch #"),
-                         
-                         yaxis = (
-                           list(title = "Velo (MPH)")
-                           )
-                         )
+                            sep = "")) %>% 
+        layout(xaxis = list(            
+          tickvals = ~df$Row,
+          tickangle = 0,
+          title = "Pitch #"),
+          
+          yaxis = (
+            list(title = "Velo (MPH)")
           )
+        )
+    )
   } else {
     return(
       plot_ly(data = df %>% group_by(df$TaggedPitchType),
@@ -191,33 +200,33 @@ spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
               hoverinfo = "text",
               text = ~paste(df$Row, ": ", round(df$SpinRate, 0), " RPM", 
                             sep = "")) %>% 
-              layout(xaxis = list(            
-                     tickvals = ~df$Row,
-                     tickangle = 0,
-                     title = "Pitch #"),
-                     
-                     yaxis = list(
-                       title = "Spin (RPM)"
-                       )
-                     )
-      )
+        layout(xaxis = list(            
+          tickvals = ~df$Row,
+          tickangle = 0,
+          title = "Pitch #"),
+          
+          yaxis = list(
+            title = "Spin (RPM)"
+          )
+        )
+    )
   }
 }
 
 releasePoints <- function(pitcher, sessionDate) {
   df <- queryDB(conn, 
-          paste("SELECT RelSide, RelHeight, 
+                paste("SELECT RelSide, RelHeight, 
                         PlateLocSide, PlateLocHeight,
                         ZoneSpeed, SpinRate, TaggedPitchType 
                   FROM TestData 
                   WHERE Pitcher = '", pitcher, "'",
-                "\n AND Date = '", sessionDate, "'", sep = ""))
+                  "\n AND Date = '", sessionDate, "'", sep = ""))
   
   df <- na.omit(df)
   df <- subset(df, df$TaggedPitchType != "Warmup")
   df$sz <- ifelse(abs(df$PlateLocSide) <= 0.78333, 
-            ifelse(df$PlateLocHeight >= 1.515, 
-              ifelse(df$PlateLocHeight <= 3.316, T, F), F), F)
+                  ifelse(df$PlateLocHeight >= 1.515, 
+                         ifelse(df$PlateLocHeight <= 3.316, T, F), F), F)
   
   plot_ly(data = df, 
           x = ~df$RelSide,
@@ -229,87 +238,88 @@ releasePoints <- function(pitcher, sessionDate) {
           text = ~paste(round(ZoneSpeed, 1), " MPH\n", 
                         round(SpinRate, 0), " RPM\n",
                         ifelse(sz, "Strike", "Ball"))
-          ) %>% 
+  ) %>% 
     layout(xaxis = list(title = "Distance from Center of Rubber (ft)"),
            yaxis = list(title = "Height above Home Plate (ft)")) 
 }
 ```
 
 ```{r UI}
-ui <- dashboardPage(
-  title = "The Tar Pen",
-  header = dashboardHeader(),
-  sidebar = dashboardSidebar(
-    sidebarMenu(
-      menuItem(text = "Individual Session", 
-               tabName = "single",
-               icon = icon("calendar-day")),
-      menuItem(text = "Session-vs.-Session",
-               tabName = "multiple",
-               icon = icon("calendar-week"))
-    )
-  ),
-  body = dashboardBody(
+ui <- navbarPage(
+  "The Tar Pen",
+  tabPanel("Individual Session",
+           fluid = TRUE,
+           icon = icon("calendar-day")),
+  
+  sidebarLayout(
     
-    tabItems(
-      
-      tabItem(
-        tabName = "single",
-        
-        fluidRow(
-          column(
-            
-            width = 3,
-            offset = 0,
-            
-            h3("Player Name"),
-            selectInput(inputId = "playerSelect",
-                        label = NULL,
-                        choices = NULL)
-          ),
-          
-          column(
-            width = 3, 
-            offset = 0,
-            
-            h3("Session Date"),
-            selectInput(inputId = "sessionSelect",
+    sidebarPanel(
+      width = 3,
+      fluidRow(
+        column(9,
+               h3("Player Name"),
+               selectInput(inputId = "playerSelect",
+                           label = NULL,
+                           choices = NULL),
+               
+               h3("Session Date"),
+               selectInput(inputId = "sessionSelect",
                            label = NULL,
                            choices = NULL)
-          )
+        )
+      )
+    ),
+    
+    mainPanel(
+      
+      tabsetPanel(
+        type = "tabs",
+        tabPanel(
+          "Strikezone Plot", 
+          id = "szPanel", 
+          br(),
+          br(),
+          plotlyOutput(outputId = "szDisplay"),
         ),
         
         
-        fluidRow(
-          
-          box(title = "Strikezone Plot (Pitcher's Perspective)",
-              plotlyOutput(outputId = "szDisplay")),
-          box(title = "Velo & Spin Graphs",
-              plotlyOutput(outputId = "veloDisplay", height = "200px"),
-              plotlyOutput(outputId = "spinDisplay", height = "200px"))
+        tabPanel(
+          "Velo, Spin Graph", 
+          id = "vlspGraph",
+          br(),
+          br(),
+          plotlyOutput(
+            outputId = "veloDisplay", height = "200px"),
+          plotlyOutput(
+            outputId = "spinDisplay", height = "200px")
         ),
         
-        fluidRow(
-          box(title = "Release Points (Pitcher's Perspective)",
-              width = 6,
-              plotlyOutput(outputId = "relDisplay")
-              ),
-          
-          box(title = "Summary & Notes",
-              width = 6,
-              dataTableOutput(outputId = "summStatsDisplay"),
-              hr(style = "border-top: 1px solid #000000;"),
-              
-              div(style = "display:inline-block",
-                  textInput(inputId = "notesInput", 
-                            label = "Enter Note Here")),
-              div(style = "display:inline-block",
-                  actionButton(inputId = "notesSubmit", 
-                               label = "Add Note",
-                               class = "btn-success")),
-              dataTableOutput(outputId = "notesDisplay"),
-              
-          )
+        tabPanel(
+          "Release Points",
+          id = "rlsGraph",
+          br(),
+          br(),
+          plotlyOutput(outputId = "relDisplay")
+        ),
+        
+        tabPanel("Summary Stats",
+                 id = "summTable",
+                 br(),
+                 br(),
+                 dataTableOutput(outputId = "summStatsDisplay")
+                 ),
+        tabPanel("Notes", 
+                 id = "notesTable",
+                 br(),
+                 br(),
+                 div(style = "display:inline-block",
+                     textInput(inputId = "notesInput", 
+                               label = "Enter Note Here")),
+                 div(style = "display:inline-block",
+                     actionButton(inputId = "notesSubmit", 
+                                  label = "Add Note",
+                                  class = "btn-success")),
+                 dataTableOutput(outputId = "notesDisplay")
         )
       )
     )
@@ -352,35 +362,35 @@ server <- function(input, output, session) {
                {
                  flags$ss <- input$sessionSelect
                }
-               )
+  )
   
-   output$szDisplay <- renderPlotly(
-                 expr = {
-                   locationDist(flags$ps, T, flags$ss)
-                 }
-               )
-               
-   output$veloDisplay <- renderPlotly(
-     expr = {
-       spinVeloGraphs(input$playerSelect, 
-                      input$sessionSelect, T)
-     }
-   )
-   
-   output$spinDisplay <- renderPlotly(
-     expr = {
-       spinVeloGraphs(input$playerSelect, 
-                      input$sessionSelect, F)
-     }
-   )
-   
-   output$relDisplay <- renderPlotly(
-     expr = {
-       releasePoints(input$playerSelect, 
-                     input$sessionSelect)
-     }
-   )
-
+  output$szDisplay <- renderPlotly(
+    expr = {
+      locationDist(flags$ps, T, flags$ss)
+    }
+  )
+  
+  output$veloDisplay <- renderPlotly(
+    expr = {
+      spinVeloGraphs(input$playerSelect, 
+                     input$sessionSelect, T)
+    }
+  )
+  
+  output$spinDisplay <- renderPlotly(
+    expr = {
+      spinVeloGraphs(input$playerSelect, 
+                     input$sessionSelect, F)
+    }
+  )
+  
+  output$relDisplay <- renderPlotly(
+    expr = {
+      releasePoints(input$playerSelect, 
+                    input$sessionSelect)
+    }
+  )
+  
   output$notesDisplay <- renderDataTable(
     expr = {
       # QUERY: Select all notes and dates for this pitcher.
