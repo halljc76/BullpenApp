@@ -715,7 +715,7 @@ invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date te
 
 # Do, however, let anyone using this know that if it complains, it's not them!
 ###############
-shinyApp(ui, server)
+shinyApp(ui, server) 
 ```
 
 
