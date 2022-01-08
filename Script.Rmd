@@ -6,8 +6,6 @@ author: "Carter Hall"
 Email: *halljc76@live.unc.edu*
 
 To-Do:
-- Change to SidebarLayout, Tabs for Each 'Box'
-- Compute average tilt (add to summ. stats)
 - Make Tilt UI 
 - Horiz., Vert. Break vs. Time, vs. Each Other  Graphs
 - Release point CLUSTER, averages, and outliers (HT)
@@ -26,6 +24,7 @@ library(plotly)
 library(DBI)
 library(dbplyr)
 library(RSQLite)
+library(rrcov)
 ```
 
 ```{r Functions message = FALSE, warning = FALSE}
@@ -35,6 +34,10 @@ addTableDB <- function(conn, filename, tablename) {
     fn <- read.csv(filename)
     dbWriteTable(conn, tablename, fn)
   }
+}
+
+queryDB <- function(conn, query) {
+  return(dbGetQuery(conn, query))
 }
 
 addData <- function(conn, filename, tablename) {
@@ -72,10 +75,6 @@ addData <- function(conn, filename, tablename) {
   }
 }
 
-queryDB <- function(conn, query) {
-  return(dbGetQuery(conn, query))
-}
-
 obtainSession <- function(player) {
   # QUERY: Return a list of days when this player logged sessions.
   q <- "SELECT DISTINCT Date FROM TestData WHERE Pitcher = '_'"
@@ -95,19 +94,78 @@ getDate <- function() {
   )
 }
 
+averageTilt <- function(pitcher, sessionDate) {
+  df <- queryDB(conn, 
+                paste("SELECT TaggedPitchType, Tilt FROM TestData 
+                    WHERE Pitcher = '", pitcher,
+                    "'AND Date = '", sessionDate, "'
+                    ORDER BY TaggedPitchType", sep = "")
+  ) 
+  
+  df <- na.omit(df)
+  ret <- data.frame()
+  
+  for (pt in unique(df$TaggedPitchType)) {
+    if (pt != "Warmup") {
+      df2 <- subset(df, df$TaggedPitchType == pt)
+      m <- c()
+      for (i in 1:nrow(df2)) {
+        tilt <- df2$Tilt[i]
+        hr <- strtoi(substr(tilt, 1, gregexpr(":", tilt)[[1]][1] - 1))
+        min <- strtoi(substr(tilt, gregexpr(":", tilt)[[1]][1] + 1, nchar(tilt)))
+        
+        m[i] <- (hr * 60) + min
+      }
+      
+      
+      nearhr <- round(mean(m) / 60)
+      nearmin <- round(round(mean(m) - round(mean(m) / 60) * 60) / 15) * 15 
+
+      if (nearmin < 0) {
+        nearhr <- nearhr - 1
+      }
+      
+      nearhr <- toString(nearhr)
+      if (nearmin == 0) {
+        nearmin <- '00'
+      } else {
+        if (nearmin >= 52.5 || nearmin <= 7.5) {
+          nearmin <- '00'
+        } else if (nearmin > 7.5 && nearmin < 22.5) {
+          nearmin <- '15'
+        } else if (nearmin > 22.5 && nearmin < 37.5) {
+          nearmin <- '30'
+        } else {
+          nearmin <- '45'
+        }
+      }
+      
+      ret <- rbind(ret, c(pt, paste(nearhr, ":", nearmin, sep = "")))
+    }
+  }
+  
+  colnames(ret) <- c("Pitch", "Avg. Tilt")
+  return(ret)
+}
 
 summaryStats <- function(pitcher, sessionDate) {
   
   ret <- queryDB(conn, 
-                 paste("SELECT TaggedPitchType AS Pitch, COUNT(TaggedPitchType) AS `Num. Thrown`, 
-        ROUND(AVG(ZoneSpeed), 1) AS `Avg. Velo`, ROUND(AVG(SpinRate), 0) AS `Avg. Spin`
-        FROM TestData 
-        WHERE Pitcher = '", pitcher, "' 
-        AND Date = '", sessionDate, "'
-        GROUP BY TaggedPitchType
-        ORDER BY `Num. Thrown` DESC", sep = "")
-  )
+                 paste("SELECT TaggedPitchType AS Pitch, 
+                 COUNT(TaggedPitchType) AS `Num. Thrown`, 
+                 ROUND(AVG(ZoneSpeed), 1) AS `Avg. Velo`, 
+                 ROUND(AVG(SpinRate), 0) 
+                 AS `Avg. Spin`
+                 FROM TestData 
+                 WHERE Pitcher = '", pitcher, "' 
+                 AND Date = '", sessionDate, "'
+                 GROUP BY TaggedPitchType", sep = "")
+          )
   ret <- subset(ret, ret$Pitch != 'Warmup')
+  ret2 <- averageTilt(pitcher, sessionDate)
+  ret <- merge(ret, ret2, by = "Pitch") 
+  ret <- ret[order(ret[,2], decreasing = TRUE),] 
+  row.names(ret) <- c()
   return(ret)
 }
 
@@ -155,11 +213,31 @@ locationDist <- function(pitcher, plotBool, sessionDate) {
   return(df)
 }
 
-spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
+horzVert <- function(pitcher, sessionDate) {
+  df <- queryDB(conn, paste("SELECT TaggedPitchType, HorzBreak, VertBreak 
+                         FROM TestData 
+                         WHERE Pitcher = '", pitcher, "' 
+                           AND Date = '", sessionDate, "'", sep = ""))
+  df <- na.omit(df)
+  df <- subset(df, df$TaggedPitchType != "Warmup")
+  
+  plot_ly(
+    data = df, 
+    type = "scatter",
+    mode = "markers",
+    x = ~df$HorzBreak,
+    y = ~df$VertBreak,
+    color = ~df$TaggedPitchType
+  ) %>% 
+    layout(xaxis = list(title = "Horizontal Break (in.)"),
+           yaxis = list(title = "Vertical Break (in.)"))
+}
+
+timeGraphs <- function(pitcher, sessionDate, flag) {
   
   df <- queryDB(conn, 
                 paste("SELECT ROW_NUMBER() OVER(PARTITION BY TaggedPitchType) AS 
-               Row, TaggedPitchType, ZoneSpeed, SpinRate
+               Row, TaggedPitchType, ZoneSpeed, SpinRate, HorzBreak, VertBreak
            FROM TestData WHERE Pitcher =  '", pitcher, "' 
            AND Date = '", sessionDate, "'
            AND ZoneSpeed IS NOT NULL 
@@ -167,7 +245,7 @@ spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
   df <- na.omit(df)
   df <- subset(df, df$TaggedPitchType != 'Warmup')
   
-  if (spinVeloFlag) {
+  if (flag == 1) {
     return(
       plot_ly(data = df %>% group_by(df$TaggedPitchType),
               x = ~df$Row, 
@@ -176,8 +254,7 @@ spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
               color = ~df$TaggedPitchType,
               mode = "lines+markers",
               hoverinfo = "text",
-              text = ~paste(df$Row, ": ", round(df$ZoneSpeed, 1), " 
-                                MPH", 
+              text = ~paste(df$Row, ": ", round(df$ZoneSpeed, 1), " MPH", 
                             sep = "")) %>% 
         layout(xaxis = list(            
           tickvals = ~df$Row,
@@ -189,7 +266,7 @@ spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
           )
         )
     )
-  } else {
+  } else if (flag == 2) {
     return(
       plot_ly(data = df %>% group_by(df$TaggedPitchType),
               x = ~df$Row, 
@@ -210,10 +287,53 @@ spinVeloGraphs <- function(pitcher, sessionDate, spinVeloFlag) {
           )
         )
     )
+  } else if (flag == 3) {
+    return(
+      plot_ly(data = df %>% group_by(df$TaggedPitchType),
+              x = ~df$Row, 
+              y = ~df$VertBreak, 
+              type = "scatter",
+              color = ~df$TaggedPitchType,
+              mode = "lines+markers",
+              hoverinfo = "text",
+              text = ~paste(df$Row, ": ", round(df$VertBreak, 0), " in.", 
+                            sep = "")) %>% 
+        layout(xaxis = list(            
+          tickvals = ~df$Row,
+          tickangle = 0,
+          title = "Pitch #"),
+          
+          yaxis = list(
+            title = "Vertical Break (inches)"
+          )
+        )
+    )
+  } else {
+    return(
+      plot_ly(data = df %>% group_by(df$TaggedPitchType),
+              x = ~df$Row, 
+              y = ~df$HorzBreak, 
+              type = "scatter",
+              color = ~df$TaggedPitchType,
+              mode = "lines+markers",
+              hoverinfo = "text",
+              text = ~paste(df$Row, ": ", round(df$HorzBreak, 0), " in.", 
+                            sep = "")) %>% 
+        layout(xaxis = list(            
+          tickvals = ~df$Row,
+          tickangle = 0,
+          title = "Pitch #"),
+          
+          yaxis = list(
+            title = "Horizontal Break (inches)"
+          )
+        )
+    )
   }
 }
 
-releasePoints <- function(pitcher, sessionDate) {
+# Deprecated version of releasePoints
+releasePointsOLD <- function(pitcher, sessionDate) {
   df <- queryDB(conn, 
                 paste("SELECT RelSide, RelHeight, 
                         PlateLocSide, PlateLocHeight,
@@ -241,6 +361,119 @@ releasePoints <- function(pitcher, sessionDate) {
   ) %>% 
     layout(xaxis = list(title = "Distance from Center of Rubber (ft)"),
            yaxis = list(title = "Height above Home Plate (ft)")) 
+}
+
+releasePoints <- function(pitcher, sessionDate) {
+
+  # Retrieve necessary data
+  df <- queryDB(conn, paste("SELECT TaggedPitchType, RelSide, RelHeight
+                       FROM TestData 
+                       WHERE Pitcher = '", pitcher, "' 
+                         AND Date = '", sessionDate, "'", sep = ""))
+  
+  df <- na.omit(df)
+  df <- subset(df, TaggedPitchType != "Warmup")
+  
+  plot <- plot_ly(
+    data = df,
+    type = "scatter",
+    mode = "markers"
+  )
+  colors <- c("red", "blue", "green", "orange", "purple") 
+  i = 1
+  # For each pitch type, identify outliers
+  for (pt in unique(df$TaggedPitchType)) {
+    temp <- subset(df, df$TaggedPitchType == pt)
+    avg <- data.frame(x = mean(temp$RelSide),
+                  y = mean(temp$RelHeight))
+    
+    c <- colors[i]
+    mcd <- tryCatch(
+      expr = {
+        covMcd(x = temp[,2:3])
+      },
+      error = function(cond) {
+        return(NULL)
+      }
+    )
+    
+    
+    # Found this from a paper on multivariate outliers
+    # and a cross-validated post. Figured implementing it 
+    # would be better than depending on the built-in
+    mahalanobisDist <- function(x, mu, cov) {
+      return(sqrt(t((x - mu)) %*% solve(cov) 
+                  %*% (x - mu)))
+    }
+    
+    
+    if (!is.null(mcd)) {
+      distances <- apply(
+        temp[,2:3], 
+        1, 
+        function(x) {
+          mahalanobisDist(x, mcd$center, mcd$cov)
+        }
+      )
+      
+      cutoff <- sqrt(qchisq(p = 0.975, df = 2))
+      
+      outliers <- df[which(distances >= cutoff),]
+      
+      ellipse_mcd <- data.frame(car::ellipse(center = mcd$center,
+                                             shape = mcd$cov,
+                                             radius= r, 
+                                             segments=100,draw=FALSE))
+      
+      plot <- plot %>% 
+        add_polygons(
+          data = ellipse_mcd,
+          x = ~x,
+          y = ~y,
+          name = pt,
+          color = c
+        )
+      plot <- plot %>% add_trace(
+        data = outliers,
+        type = "scatter",
+        mode = "markers",
+        x = ~RelSide,
+        y = ~RelHeight,
+        name = pt, 
+        color = c
+      )
+    } else {
+      plot <- plot %>% add_trace(
+          data = temp,
+          type = "scatter",
+          mode = "markers",
+          x = ~RelSide,
+          y = ~RelHeight,
+          name = pt,
+          color = c
+          )
+    }
+    plot <- plot %>% add_trace(
+        type = "scatter",
+        mode = "markers",
+        data = avg,
+        x = ~x,
+        y = ~y,
+        name = pt,
+        color = c,
+        marker = list(symbol = "diamond"),
+        showlegend = FALSE
+      )
+    i = i + 1
+  }
+  
+  plot <- plot %>% 
+  layout(xaxis = list(title = "Dist. from Rubber Center (ft)",
+                      range = c(-5, 5)), 
+                  yaxis = list(title = "Dist. above Home Plate (ft)",
+                               range = c(0, 6)))
+  
+  return(plot)
 }
 ```
 
@@ -275,29 +508,40 @@ ui <- navbarPage(
       tabsetPanel(
         type = "tabs",
         tabPanel(
-          "Strikezone Plot", 
-          id = "szPanel", 
+          "Horiz. vs. Vert. Break", 
+          id = "hvBreak", 
           br(),
           br(),
-          plotlyOutput(outputId = "szDisplay"),
+          plotlyOutput(outputId = "breakDisplay"),
         ),
         
         
         tabPanel(
-          "Velo, Spin Graph", 
-          id = "vlspGraph",
+          "Metrics over Time", 
+          id = "timeGraphs",
           br(),
-          br(),
+          h3("Velocity"),
           plotlyOutput(
             outputId = "veloDisplay", height = "200px"),
+          h3("Spin Rate"),
           plotlyOutput(
-            outputId = "spinDisplay", height = "200px")
+            outputId = "spinDisplay", height = "200px"),
+          h3("Vertical Break"),
+          plotlyOutput(
+            outputId = "vertDisplay", height = "200px"),
+          h3("Horizontal Break"),
+          plotlyOutput(
+            outputId = "horzDisplay", height = "200px")
         ),
         
         tabPanel(
           "Release Points",
           id = "rlsGraph",
           br(),
+          h5("How To Read"),
+          h6("Any 'points' with no ellipse of the same color is data for which there were too few points to draw an ellipse. Points outside of their same-colored ellipse are 'outliers' -- possibly atypical releases of that pitch. 'Diamonds' are averages."),
+          h6("If anything is small, press the 'Autoscale' button! Hover over the plot, and press the button to the left of 
+             'Home'."),
           br(),
           plotlyOutput(outputId = "relDisplay")
         ),
@@ -307,7 +551,7 @@ ui <- navbarPage(
                  br(),
                  br(),
                  dataTableOutput(outputId = "summStatsDisplay")
-                 ),
+        ),
         tabPanel("Notes", 
                  id = "notesTable",
                  br(),
@@ -364,30 +608,39 @@ server <- function(input, output, session) {
                }
   )
   
-  output$szDisplay <- renderPlotly(
+  output$breakDisplay <- renderPlotly(
     expr = {
-      locationDist(flags$ps, T, flags$ss)
+      horzVert(flags$ps, flags$ss)
     }
   )
   
   output$veloDisplay <- renderPlotly(
     expr = {
-      spinVeloGraphs(input$playerSelect, 
-                     input$sessionSelect, T)
+      timeGraphs(flags$ps, flags$ss, 1)
     }
   )
   
   output$spinDisplay <- renderPlotly(
     expr = {
-      spinVeloGraphs(input$playerSelect, 
-                     input$sessionSelect, F)
+      timeGraphs(flags$ps, flags$ss, 2)
+    }
+  )
+  
+  output$vertDisplay <- renderPlotly(
+    expr = {
+      timeGraphs(flags$ps, flags$ss, 3)
+    }
+  )
+  
+  output$horzDisplay <- renderPlotly(
+    expr = {
+      timeGraphs(flags$ps, flags$ss, 4)
     }
   )
   
   output$relDisplay <- renderPlotly(
     expr = {
-      releasePoints(input$playerSelect, 
-                    input$sessionSelect)
+      releasePoints(flags$ps, flags$ss)
     }
   )
   
@@ -454,7 +707,7 @@ invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date te
 ## IMPORTANT ##
 # Sometimes, the app throws error messages on-startup. 
 # This is, to the best of my knowledge, simply because some things take awhile
-# to execute. 
+# to execute. (This hasn't happened under the Tabset UI... *knocks on wood*.)
 
 # The code SHOULD function (startup time probably around 5 seconds... but
 # I doubt this would be too much of an issue as it isn't the homepage of the app,

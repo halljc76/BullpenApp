@@ -13,7 +13,8 @@ reflect on their game preparations.
 - Summary Statistics 
 - Velocity, Spin vs. Time Graphs
 - Notes Display and Interactive Input
-- Release Point Graphs 
+- Release Point Graphs (updated with clustering -- hoping to tweak this in the future!)
+- Tilt Graphic for Pitch Types (to-come)
 - Session-vs.-Session Comparison (to-come)
 
 ### Disclaimer
