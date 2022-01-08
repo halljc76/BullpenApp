@@ -9,7 +9,7 @@ The goal for this application is to be a place where players can qualitatively
 reflect on their game preparations.
 
 ### Features
-- Strikezone Plot annotated with Velocity, Spin
+- Strikezone Plot annotated with Velocity, Spin (*deprecated* for now)
 - Summary Statistics 
 - Velocity, Spin vs. Time Graphs
 - Notes Display and Interactive Input
