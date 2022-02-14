@@ -8,7 +8,8 @@ Email: *halljc76@live.unc.edu*
 To-Do:
 - Make Tilt UI 
 - Horiz., Vert. Break vs. Time, vs. Each Other  Graphs
-- Release point CLUSTER, averages, and outliers (HT)
+- Release point CLUSTER, averages, and outliers (HT?)
+   - Add interactiveness to Release Points
 - Add Balls, Strikes to Summ. Stats?
 
 
@@ -17,14 +18,15 @@ options(shiny.maxRequestSize = 50*1024^2)
 library(shiny)
 library(shinydashboard)
 library(DT)
-library(ggplot2)
-library(dplyr)
+library(tidyverse)
 library(shinythemes)
 library(plotly)
 library(DBI)
 library(dbplyr)
 library(RSQLite)
 library(rrcov)
+library(cowplot)
+library(magick)
 ```
 
 ```{r Functions message = FALSE, warning = FALSE}
@@ -119,8 +121,9 @@ averageTilt <- function(pitcher, sessionDate) {
       
       
       nearhr <- round(mean(m) / 60)
-      nearmin <- round(round(mean(m) - round(mean(m) / 60) * 60) / 15) * 15 
-
+      nearmin <- round(
+        round(mean(m) - round(mean(m) / 60) * 60) / 15) * 15 
+      
       if (nearmin < 0) {
         nearhr <- nearhr - 1
       }
@@ -160,7 +163,7 @@ summaryStats <- function(pitcher, sessionDate) {
                  WHERE Pitcher = '", pitcher, "' 
                  AND Date = '", sessionDate, "'
                  GROUP BY TaggedPitchType", sep = "")
-          )
+  )
   ret <- subset(ret, ret$Pitch != 'Warmup')
   ret2 <- averageTilt(pitcher, sessionDate)
   ret <- merge(ret, ret2, by = "Pitch") 
@@ -364,7 +367,7 @@ releasePointsOLD <- function(pitcher, sessionDate) {
 }
 
 releasePoints <- function(pitcher, sessionDate) {
-
+  
   # Retrieve necessary data
   df <- queryDB(conn, paste("SELECT TaggedPitchType, RelSide, RelHeight
                        FROM TestData 
@@ -385,7 +388,7 @@ releasePoints <- function(pitcher, sessionDate) {
   for (pt in unique(df$TaggedPitchType)) {
     temp <- subset(df, df$TaggedPitchType == pt)
     avg <- data.frame(x = mean(temp$RelSide),
-                  y = mean(temp$RelHeight))
+                      y = mean(temp$RelHeight))
     
     c <- colors[i]
     mcd <- tryCatch(
@@ -422,7 +425,7 @@ releasePoints <- function(pitcher, sessionDate) {
       
       ellipse_mcd <- data.frame(car::ellipse(center = mcd$center,
                                              shape = mcd$cov,
-                                             radius= r, 
+                                             radius= 1, 
                                              segments=100,draw=FALSE))
       
       plot <- plot %>% 
@@ -444,34 +447,34 @@ releasePoints <- function(pitcher, sessionDate) {
       )
     } else {
       plot <- plot %>% add_trace(
-          data = temp,
-          type = "scatter",
-          mode = "markers",
-          x = ~RelSide,
-          y = ~RelHeight,
-          name = pt,
-          color = c
-          )
-    }
-    plot <- plot %>% add_trace(
+        data = temp,
         type = "scatter",
         mode = "markers",
-        data = avg,
-        x = ~x,
-        y = ~y,
+        x = ~RelSide,
+        y = ~RelHeight,
         name = pt,
-        color = c,
-        marker = list(symbol = "diamond"),
-        showlegend = FALSE
+        color = c
       )
+    }
+    plot <- plot %>% add_trace(
+      type = "scatter",
+      mode = "markers",
+      data = avg,
+      x = ~x,
+      y = ~y,
+      name = pt,
+      color = c,
+      marker = list(symbol = "diamond"),
+      showlegend = FALSE
+    )
     i = i + 1
   }
   
   plot <- plot %>% 
-  layout(xaxis = list(title = "Dist. from Rubber Center (ft)",
-                      range = c(-5, 5)), 
-                  yaxis = list(title = "Dist. above Home Plate (ft)",
-                               range = c(0, 6)))
+    layout(xaxis = list(title = "Dist. from Rubber Center (ft)",
+                        range = c(-5, 5)), 
+           yaxis = list(title = "Dist. above Home Plate (ft)",
+                        range = c(0, 6)))
   
   return(plot)
 }
@@ -707,15 +710,9 @@ invisible(queryDB(conn, "CREATE Table IF NOT EXISTS Notes (Pitcher text, Date te
 ## IMPORTANT ##
 # Sometimes, the app throws error messages on-startup. 
 # This is, to the best of my knowledge, simply because some things take awhile
-# to execute. (This hasn't happened under the Tabset UI... *knocks on wood*.)
-
-# The code SHOULD function (startup time probably around 5 seconds... but
-# I doubt this would be too much of an issue as it isn't the homepage of the app,
-# and anything could run before someone gets to it.)
+# to execute. 
 
 # Do, however, let anyone using this know that if it complains, it's not them!
 ###############
 shinyApp(ui, server) 
 ```
-
-
